@@ -15,7 +15,7 @@
               - wget
         - name: Download EESSI installation
           get_url:
-            url: https://raw.githubusercontent.com/EESSI/eessi-demo/main/scripts/install_cvmfs_x86_64_Ubuntu.sh
+            url: https://raw.githubusercontent.com/EESSI/eessi-demo/9ed1324325cd906987a4cad84da057d55a2dd1e4/scripts/install_cvmfs_eessi_Ubuntu.sh
             dest: /tmp/install_cvmfs_x86_64_Ubuntu.sh
             mode: 0755
         - name: Execute the zsh-installer.sh
@@ -29,9 +29,8 @@
             name: sudo
         - name: Download EESSI installation
           get_url:
-            url: https://raw.githubusercontent.com/EESSI/eessi-demo/main/scripts/install_cvmfs_aarch64_RHEL7.sh
+            url: https://raw.githubusercontent.com/EESSI/eessi-demo/9ed1324325cd906987a4cad84da057d55a2dd1e4/scripts/install_cvmfs_eessi_RHEL.sh
             dest: /tmp/install_cvmfs_aarch64_RHEL7.sh
             mode: 0755
         - name: Install and configure EESSI
           shell: /tmp/install_cvmfs_aarch64_RHEL7.sh
-        - shell: ls /cvmfs/pilot.eessi-hpc.org/2021.06/init/bash
