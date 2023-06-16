@@ -60,5 +60,8 @@
       with_items:
         - { variable: "_src_stratum1_host_", value: "{{ src_stratum1_host }}" }
 
+    - name: Update EESSI configuration
+      shell: cvmfs_config probe pilot.eessi-hpc.org
+
     - name: Probe Stratum 1 servers by geo location to trigger reordering
       shell: cvmfs_talk -i pilot.eessi-hpc.org host probe geo
