@@ -4,7 +4,22 @@
     - localhost
   gather_facts: true
 
+  # Requires variable `src_stratum1_host` from plugin parameters
   tasks:
+    - name: Add private Stratum 1 to list of Stratum 1s
+      copy:
+        src: ../files/template-eessi-hpc.org.local
+        dest: /etc/cvmfs/domain.d/eessi-hpc.org.local
+        force: true
+        mode: u=rw,g=rw,o=r
+    - name: Substitute template variables with values
+      replace:
+        path: /etc/cvmfs/domain.d/eessi-hpc.org.local
+        regexp: "{{ item.variable }}"
+        replace: "{{ item.value }}"
+      with_items:
+        - { variable: "_src_stratum1_host_", value: "{{ src_stratum1_host }}" }
+
     - name: Ubuntu installation of EESSI client
       when: ansible_distribution == 'Ubuntu'
       block:
@@ -30,7 +45,20 @@
         - name: Download EESSI installation
           get_url:
             url: https://raw.githubusercontent.com/EESSI/eessi-demo/9ed1324325cd906987a4cad84da057d55a2dd1e4/scripts/install_cvmfs_eessi_RHEL.sh
-            dest: /tmp/install_cvmfs_aarch64_RHEL7.sh
+            dest: /tmp/install_cvmfs_eessi_RHEL.sh
             mode: 0755
         - name: Install and configure EESSI
-          shell: /tmp/install_cvmfs_aarch64_RHEL7.sh
+          shell: /tmp/install_cvmfs_eessi_RHEL.sh
+
+    - name: Verify cvmfs_talk command
+      shell: "command -v cvmfs_talk"
+      register: cvmfs_talk_output
+      ignore_errors: true
+
+    - name: Fail if cvmfs_talk command not found
+      fail:
+        msg: "'cvmfs_talk' command is not available. EESSI client installation failed."
+      when: cvmfs_talk_output.rc != 0
+
+    - name: Probe Stratum 1 servers by geo location to trigger reordering
+      shell: cvmfs_talk -i pilot.eessi-hpc.org host probe geo

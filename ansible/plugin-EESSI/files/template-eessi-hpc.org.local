@@ -1,0 +1,1 @@
+CVMFS_SERVER_URL="http://_src_stratum1_host_/cvmfs/@fqrn@;$CVMFS_SERVER_URL"
