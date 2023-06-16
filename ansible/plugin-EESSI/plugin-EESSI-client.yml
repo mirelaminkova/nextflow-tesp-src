@@ -6,20 +6,6 @@
 
   # Requires variable `src_stratum1_host` from plugin parameters
   tasks:
-    - name: Add private Stratum 1 to list of Stratum 1s
-      copy:
-        src: ../files/template-eessi-hpc.org.local
-        dest: /etc/cvmfs/domain.d/eessi-hpc.org.local
-        force: true
-        mode: u=rw,g=rw,o=r
-    - name: Substitute template variables with values
-      replace:
-        path: /etc/cvmfs/domain.d/eessi-hpc.org.local
-        regexp: "{{ item.variable }}"
-        replace: "{{ item.value }}"
-      with_items:
-        - { variable: "_src_stratum1_host_", value: "{{ src_stratum1_host }}" }
-
     - name: Ubuntu installation of EESSI client
       when: ansible_distribution == 'Ubuntu'
       block:
@@ -59,6 +45,20 @@
       fail:
         msg: "'cvmfs_talk' command is not available. EESSI client installation failed."
       when: cvmfs_talk_output.rc != 0
+
+    - name: Add private Stratum 1 to list of Stratum 1s
+      copy:
+        src: ../files/template-eessi-hpc.org.local
+        dest: /etc/cvmfs/domain.d/eessi-hpc.org.local
+        force: true
+        mode: u=rw,g=rw,o=r
+    - name: Substitute template variables with values
+      replace:
+        path: /etc/cvmfs/domain.d/eessi-hpc.org.local
+        regexp: "{{ item.variable }}"
+        replace: "{{ item.value }}"
+      with_items:
+        - { variable: "_src_stratum1_host_", value: "{{ src_stratum1_host }}" }
 
     - name: Probe Stratum 1 servers by geo location to trigger reordering
       shell: cvmfs_talk -i pilot.eessi-hpc.org host probe geo
