@@ -65,3 +65,20 @@
 
     - name: Probe Stratum 1 servers by geo location to trigger reordering
       shell: cvmfs_talk -i pilot.eessi-hpc.org host probe geo
+
+
+# Nextflow
+- name: Create persistent EESSI initialization profile
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Create /etc/profile.d/eessi.sh that loads eessi-init.sh
+      copy:
+        dest: /etc/profile.d/eessi.sh
+        content: |
+          #!/bin/bash
+          # Automatically load EESSI environment and Nextflow
+          if [ -f /opt/eessi-init.sh ]; then
+              source /opt/eessi-init.sh
+          fi
+        mode: '0755'
