@@ -1,40 +1,24 @@
 ---
 - name: Configure node for access to the EESSI stack
-  hosts:
-    - localhost
+  hosts: localhost
   gather_facts: true
 
-  # Requires variable `src_stratum1_host` from plugin parameters
   tasks:
-    - name: Ubuntu installation of EESSI client
-      when: ansible_distribution == 'Ubuntu'
-      block:
-        - name: Install prerequisites
-          apt:
-            name:
-              - sudo
-              - wget
-        - name: Download EESSI installation
-          get_url:
-            url: https://raw.githubusercontent.com/EESSI/eessi-demo/9ed1324325cd906987a4cad84da057d55a2dd1e4/scripts/install_cvmfs_eessi_Ubuntu.sh
-            dest: /tmp/install_cvmfs_x86_64_Ubuntu.sh
-            mode: 0755
-        - name: Execute the zsh-installer.sh
-          shell: /tmp/install_cvmfs_x86_64_Ubuntu.sh
+    - name: Install prerequisites
+      apt:
+        name:
+          - sudo
+          - wget
+        state: present
 
-    - name: CentOS installation of EESSI client
-      when: ansible_distribution == 'CentOS'
-      block:
-        - name: Install prerequisites
-          yum:
-            name: sudo
-        - name: Download EESSI installation
-          get_url:
-            url: https://raw.githubusercontent.com/EESSI/eessi-demo/9ed1324325cd906987a4cad84da057d55a2dd1e4/scripts/install_cvmfs_eessi_RHEL.sh
-            dest: /tmp/install_cvmfs_eessi_RHEL.sh
-            mode: 0755
-        - name: Install and configure EESSI
-          shell: /tmp/install_cvmfs_eessi_RHEL.sh
+    - name: Download EESSI installation script
+      get_url:
+        url: https://raw.githubusercontent.com/EESSI/eessi-demo/23da78bd7cc56332cceb9567bf67be637af91946/scripts/install_cvmfs_eessi.sh
+        dest: /tmp/install_cvmfs_eessi.sh
+        mode: '0755'
+
+    - name: Execute the installation script
+      shell: /tmp/install_cvmfs_eessi.sh
 
     - name: Verify cvmfs_talk command
       shell: "command -v cvmfs_talk"
@@ -47,24 +31,30 @@
       when: cvmfs_talk_output.rc != 0
 
     - name: Add private Stratum 1 to list of Stratum 1s
-      copy:
-        src: ../files/template-eessi-hpc.org.local
-        dest: /etc/cvmfs/domain.d/eessi-hpc.org.local
-        force: true
-        mode: u=rw,g=rw,o=r
-    - name: Substitute template variables with values
-      replace:
-        path: /etc/cvmfs/domain.d/eessi-hpc.org.local
-        regexp: "{{ item.variable }}"
-        replace: "{{ item.value }}"
-      with_items:
-        - { variable: "_src_stratum1_host_", value: "{{ src_stratum1_host }}" }
+      when: src_stratum1_host is defined
+      block:
+        - name: Copy domain template
+          copy:
+            src: ../files/template-eessi-hpc.org.local
+            dest: /etc/cvmfs/domain.d/eessi-hpc.org.local
+            force: true
+            mode: '0664'
 
-    - name: Update EESSI configuration
-      shell: cvmfs_config probe pilot.eessi-hpc.org
+        - name: Substitute template variables with values
+          replace:
+            path: /etc/cvmfs/domain.d/eessi-hpc.org.local
+            regexp: "{{ item.variable }}"
+            replace: "{{ item.value }}"
+          loop:
+            - { variable: "_src_stratum1_host_", value: "{{ src_stratum1_host }}" }
 
-    - name: Probe Stratum 1 servers by geo location to trigger reordering
-      shell: cvmfs_talk -i pilot.eessi-hpc.org host probe geo
+        - name: Update EESSI configuration
+          shell: cvmfs_config probe pilot.eessi-hpc.org
+
+        - name: Probe Stratum 1 servers by geo location to trigger reordering
+          shell: cvmfs_talk -i pilot.eessi-hpc.org host probe geo
+
+
 
 
 # Nextflow
