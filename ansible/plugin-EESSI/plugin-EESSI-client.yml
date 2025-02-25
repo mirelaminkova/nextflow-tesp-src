@@ -58,17 +58,25 @@
 
 
 # Nextflow
-- name: Create persistent EESSI initialization profile
+- name: Deploy Nextflow environment configuration
   hosts: localhost
-  become: yes
+  become: true
+  gather_facts: true
   tasks:
-    - name: Create /etc/profile.d/eessi.sh that loads eessi-init.sh
+    - name: Copy the Nextflow EESSI initialization script to /opt
       copy:
-        dest: /etc/profile.d/eessi.sh
+        src: files/nextflow-eessi-init.sh
+        dest: /opt/nextflow-eessi-init.sh
+        mode: '0755'
+    - name: Create /etc/profile.d/nextflow.sh to load the Nextflow environment
+      copy:
+        dest: /etc/profile.d/nextflow.sh
         content: |
           #!/bin/bash
-          # Automatically load EESSI environment and Nextflow
-          if [ -f /opt/eessi-init.sh ]; then
-              source /opt/eessi-init.sh
+          # Automatically load the EESSI environment and Nextflow modules for interactive sessions.
+          if [ -f /opt/nextflow-eessi-init.sh ]; then
+              source /opt/nextflow-eessi-init.sh
           fi
         mode: '0755'
+    - debug:
+        msg: "Nextflow environment deployed. After logging out and back in (or starting a new login shell), the Nextflow command will be available."

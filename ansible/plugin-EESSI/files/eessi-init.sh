@@ -10,5 +10,6 @@ else
     export PATH="/cvmfs/software.eessi.io/versions/2023.06/compat/linux/x86_64-002/usr/share/Lmod:$PATH"
 fi
 
-module load GCCcore/13.2.0
-module load Nextflow/23.10.0
+module load Nextflow/23.10.0 || { echo "Failed to load Nextflow/23.10.0"; exit 1; }
+module list
+echo "PATH after loading modules: $PATH"
