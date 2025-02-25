@@ -18,8 +18,7 @@ else
     export PATH="/cvmfs/software.eessi.io/versions/2023.06/compat/linux/x86_64-002/usr/share/Lmod:$PATH"
 fi
 
-# Load necessary modules for Nextflow
-#module load GCCcore/13.2.0
+# Load necessary module for Nextflow
 module load Nextflow/23.10.0
 
 echo "EESSI environment with Nextflow initialized."

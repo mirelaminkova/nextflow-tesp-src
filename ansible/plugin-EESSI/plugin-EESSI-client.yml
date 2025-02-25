@@ -68,6 +68,7 @@
         src: files/nextflow-eessi-init.sh
         dest: /opt/nextflow-eessi-init.sh
         mode: '0755'
+
     - name: Create /etc/profile.d/nextflow.sh to load the Nextflow environment
       copy:
         dest: /etc/profile.d/nextflow.sh
@@ -78,5 +79,44 @@
               source /opt/nextflow-eessi-init.sh
           fi
         mode: '0755'
+
     - debug:
-        msg: "Nextflow environment deployed. After logging out and back in (or starting a new login shell), the Nextflow command will be available."
+        msg: "Nextflow environment deployed. New login shells will load Nextflow automatically."
+
+- name: Deploy and start Nextflow systemd service
+  hosts: localhost
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Create Nextflow systemd service file
+      copy:
+        dest: /etc/systemd/system/nextflow.service
+        content: |
+          [Unit]
+          Description=Nextflow Environment Service
+          After=network.target
+
+          [Service]
+          Type=simple
+          # Run in a login shell so that /etc/profile.d/nextflow.sh is sourced.
+          # This command prints Nextflow version then sleeps indefinitely.
+          ExecStart=/bin/bash -l -c 'nextflow -version && sleep infinity'
+          Restart=always
+          RestartSec=30
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start Nextflow service
+      systemd:
+        name: nextflow
+        enabled: yes
+        state: started
+
+    - debug:
+        msg: "Nextflow service deployed and started."
