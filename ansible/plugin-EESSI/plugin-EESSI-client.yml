@@ -1,8 +1,7 @@
 ---
 - name: Configure node for access to the EESSI stack
   hosts: localhost
-  gather_facts: true
-
+  gather_facts: yes
   tasks:
     - name: Install prerequisites
       apt:
@@ -10,6 +9,7 @@
           - sudo
           - wget
         state: present
+        update_cache: yes
 
     - name: Download EESSI installation script
       get_url:
@@ -17,13 +17,15 @@
         dest: /tmp/install_cvmfs_eessi.sh
         mode: '0755'
 
-    - name: Execute the installation script
+    - name: Execute the EESSI installation script
       shell: /tmp/install_cvmfs_eessi.sh
+      args:
+        executable: /bin/bash
 
     - name: Verify cvmfs_talk command
       shell: "command -v cvmfs_talk"
       register: cvmfs_talk_output
-      ignore_errors: true
+      ignore_errors: yes
 
     - name: Fail if cvmfs_talk command not found
       fail:
@@ -35,7 +37,7 @@
       block:
         - name: Copy domain template
           copy:
-            src: ../files/template-eessi-hpc.org.local
+            src: files/template-eessi-hpc.org.local
             dest: /etc/cvmfs/domain.d/eessi-hpc.org.local
             force: true
             mode: '0664'
@@ -51,43 +53,37 @@
         - name: Update EESSI configuration
           shell: cvmfs_config probe pilot.eessi-hpc.org
 
-        - name: Probe Stratum 1 servers by geo location to trigger reordering
+        - name: Probe Stratum 1 servers by geo location
           shell: cvmfs_talk -i pilot.eessi-hpc.org host probe geo
 
-
-
-
-# Nextflow
-- name: Deploy Nextflow environment configuration
+- name: Deploy and start Nextflow systemd service
   hosts: localhost
-  become: true
-  gather_facts: true
+  become: yes
+  gather_facts: yes
   tasks:
-    - name: Copy the Nextflow EESSI initialization script to /opt
+    - name: Copy Nextflow-specific EESSI initialization script
       copy:
         src: files/nextflow-eessi-init.sh
         dest: /opt/nextflow-eessi-init.sh
         mode: '0755'
 
-    - name: Create /etc/profile.d/nextflow.sh to load the Nextflow environment
+    - name: Create Nextflow service wrapper script
       copy:
-        dest: /etc/profile.d/nextflow.sh
+        dest: /opt/nextflow-service-wrapper.sh
         content: |
           #!/bin/bash
-          # Automatically load the EESSI environment and Nextflow modules for interactive sessions.
-          if [ -f /opt/nextflow-eessi-init.sh ]; then
-              source /opt/nextflow-eessi-init.sh
-          fi
+          # This script serves as a wrapper for the Nextflow service
+          
+          # Source the Nextflow-specific EESSI environment
+          source /opt/nextflow-eessi-init.sh
+          
+          # Print Nextflow version for verification
+          nextflow -version
+          
+          # Keep the service running
+          sleep infinity
         mode: '0755'
 
-    - debug:
-        msg: "Nextflow environment deployed. New login shells will load Nextflow automatically."
-
-- name: Deploy and start Nextflow systemd service
-  hosts: localhost
-  become: true
-  gather_facts: true
-  tasks:
     - name: Create Nextflow systemd service file
       copy:
         dest: /etc/systemd/system/nextflow.service
@@ -95,15 +91,13 @@
           [Unit]
           Description=Nextflow Environment Service
           After=network.target
-
+          
           [Service]
           Type=simple
-          # Run in a login shell so that /etc/profile.d/nextflow.sh is sourced.
-          # This command prints Nextflow version then sleeps indefinitely.
-          ExecStart=/bin/bash -l -c 'nextflow -version && sleep infinity'
+          ExecStart=/opt/nextflow-service-wrapper.sh
           Restart=always
           RestartSec=30
-
+          
           [Install]
           WantedBy=multi-user.target
         mode: '0644'
