@@ -1,31 +1,19 @@
 #!/bin/bash
 set -e
 
-# Manually set MODULEPATH so Lmod can find available modules
+# Set MODULEPATH as before
 export MODULEPATH="/cvmfs/software.eessi.io/versions/2023.06/software/linux/x86_64/amd/zen2/modules/all:/cvmfs/software.eessi.io/host_injections/2023.06/software/linux/x86_64/amd/zen2/modules/all"
 
+# Set LMOD_LUA_PATH so Lmod finds its Lua modules
+export LMOD_LUA_PATH="/usr/share/lmod/lmod/libexec/?.lua;/usr/share/lmod/lmod/libexec/?/init.lua"
+
 # Load the base EESSI environment
-if [ -f "/cvmfs/software.eessi.io/versions/2023.06/init/bash" ]; then
-    source /cvmfs/software.eessi.io/versions/2023.06/init/bash
-else
-    echo "EESSI initialization script not found! Exiting."
-    exit 1
-fi
+source /cvmfs/software.eessi.io/versions/2023.06/init/bash
 
-# Initialize Lmod by sourcing its initialization script
-if [ -f "/usr/share/lmod/lmod/init/bash" ]; then
-    source /usr/share/lmod/lmod/init/bash
-else
-    echo "Lmod initialization script not found! Exiting."
-    exit 1
-fi
+# Initialize Lmod
+source /usr/share/lmod/lmod/init/bash
 
-# Load the Nextflow module explicitly
-if module load Nextflow/23.10.0; then
-    echo "Successfully loaded Nextflow/23.10.0"
-else
-    echo "Failed to load Nextflow/23.10.0"
-    exit 1
-fi
+# Load the Nextflow module
+module load Nextflow/23.10.0
 
 echo "EESSI environment with Nextflow initialized."

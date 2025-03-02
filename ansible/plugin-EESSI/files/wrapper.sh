@@ -1,7 +1,7 @@
 #!/bin/bash
 # This script serves as a wrapper for the Nextflow service
 
-# Source the Nextflow-specific EESSI environment
+# Source the Nextflow-specific initialization
 source /opt/nextflow-eessi-init.sh
 
 # Print Nextflow version for verification
