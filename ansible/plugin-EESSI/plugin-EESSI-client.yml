@@ -57,35 +57,68 @@
         - name: Probe Stratum 1 servers by geo location
           shell: cvmfs_talk -i pilot.eessi-hpc.org host probe geo
 
-- name: Deploy and start Nextflow systemd service
+- name: Fix Nextflow service wrapper script
   hosts: localhost
   become: yes
   gather_facts: yes
   tasks:
-    - name: Copy Nextflow-specific EESSI initialization script
-      copy:
-        src: files/nextflow-eessi-init.sh
-        dest: /opt/nextflow-eessi-init.sh
+    - name: Create log directory for Nextflow service
+      file:
+        path: /var/log/nextflow
+        state: directory
         mode: '0755'
 
-    - name: Create Nextflow service wrapper script
+    - name: Remove existing wrapper script
+      file:
+        path: /opt/nextflow-service-wrapper.sh
+        state: absent
+
+    - name: Create new wrapper script with proper format
       copy:
         dest: /opt/nextflow-service-wrapper.sh
         content: |
           #!/bin/bash
-          # This script serves as a wrapper for the Nextflow service
           
-          # Source the Nextflow-specific EESSI environment
-          source /opt/nextflow-eessi-init.sh
+          # Create log directory for Nextflow service logs
+          mkdir -p /var/log/nextflow
+          LOGFILE="/var/log/nextflow/nextflow-service.log"
           
-          # Print Nextflow version for verification
-          nextflow -version
+          # Start logging
+          echo "$(date): Starting Nextflow service wrapper" > $LOGFILE
+          echo "$(date): Script executed with proper shebang" >> $LOGFILE
+          echo "Initial PATH: $PATH" >> $LOGFILE
           
-          # Keep the service running
+          # Basic environment setup: set MODULEPATH and LMOD_LUA_PATH
+          export MODULEPATH="/cvmfs/software.eessi.io/versions/2023.06/software/linux/x86_64/amd/zen2/modules/all:/cvmfs/software.eessi.io/host_injections/2023.06/software/linux/x86_64/amd/zen2/modules/all"
+          export LMOD_LUA_PATH="/usr/share/lmod/lmod/libexec/?.lua;/usr/share/lmod/lmod/libexec/?/init.lua"
+          
+          # Source EESSI initialization script (which sets up Lmod as well)
+          if [ -f /cvmfs/software.eessi.io/versions/2023.06/init/bash ]; then
+              echo "$(date): Sourcing EESSI init file" >> $LOGFILE
+              source /cvmfs/software.eessi.io/versions/2023.06/init/bash >> $LOGFILE 2>&1
+          else
+              echo "$(date): EESSI init file not found" >> $LOGFILE
+              ls -la /cvmfs/software.eessi.io/versions/2023.06/ >> $LOGFILE 2>&1
+          fi
+          
+          echo "$(date): MODULEPATH after sourcing: $MODULEPATH" >> $LOGFILE
+          
+          # Load the Nextflow module
+          echo "$(date): Loading Nextflow module" >> $LOGFILE
+          module load Nextflow/23.10.0 >> $LOGFILE 2>&1
+          
+          # Verify that Nextflow is available
+          echo "$(date): Checking Nextflow executable" >> $LOGFILE
+          which nextflow >> $LOGFILE 2>&1
+          
+          # Keep service running (or replace with Nextflow start command as needed)
+          echo "$(date): Starting sleep loop" >> $LOGFILE
           sleep infinity
         mode: '0755'
+        owner: root
+        group: root
 
-    - name: Create Nextflow systemd service file
+    - name: Update Nextflow systemd service file
       copy:
         dest: /etc/systemd/system/nextflow.service
         content: |
@@ -95,23 +128,55 @@
           
           [Service]
           Type=simple
-          ExecStart=/opt/nextflow-service-wrapper.sh
-          Restart=always
+          ExecStart=/bin/bash -c '/opt/nextflow-service-wrapper.sh'
+          WorkingDirectory=/tmp
+          StandardOutput=append:/var/log/nextflow/nextflow-systemd.log
+          StandardError=append:/var/log/nextflow/nextflow-systemd.log
+          Restart=on-failure
           RestartSec=30
           
           [Install]
           WantedBy=multi-user.target
         mode: '0644'
-
     - name: Reload systemd daemon
       systemd:
         daemon_reload: yes
 
-    - name: Enable and start Nextflow service
+    - name: Restart Nextflow service
       systemd:
         name: nextflow
-        enabled: yes
-        state: started
+        state: restarted
 
-    - debug:
-        msg: "Nextflow service deployed and started."
+    - name: Wait a few seconds
+      pause:
+        seconds: 5
+
+    - name: Check wrapper script log
+      shell: cat /var/log/nextflow/nextflow-service.log
+      register: wrapper_log
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Check systemd log
+      shell: cat /var/log/nextflow/nextflow-systemd.log
+      register: systemd_log
+      ignore_errors: yes
+      changed_when: false
+    - name: Display logs
+      debug:
+        msg:
+          - "Wrapper Log:"
+          - "{{ wrapper_log.stdout_lines | default(['Not available']) }}"
+          - "Systemd Log:"
+          - "{{ systemd_log.stdout_lines | default(['Not available']) }}"
+
+    - name: Check service status
+      shell: systemctl status nextflow.service
+      register: service_status
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Display service status
+      debug:
+        var: service_status.stdout_lines
+
