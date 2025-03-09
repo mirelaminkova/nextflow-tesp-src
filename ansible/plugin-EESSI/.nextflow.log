@@ -1,0 +1,51 @@
+Mar-09 09:29:33.120 [main] DEBUG nextflow.cli.Launcher - $> nextflow test.nf
+Mar-09 09:29:33.204 [main] INFO  nextflow.cli.CmdRun - N E X T F L O W  ~  version 23.10.0
+Mar-09 09:29:33.227 [main] DEBUG nextflow.plugin.PluginsFacade - Setting up plugin manager > mode=prod; embedded=false; plugins-dir=/home/mminkova3/.nextflow/plugins; core-plugins: nf-amazon@2.1.4,nf-azure@1.3.2,nf-cloudcache@0.3.0,nf-codecommit@0.1.5,nf-console@1.0.6,nf-ga4gh@1.1.0,nf-google@1.8.3,nf-tower@1.6.3,nf-wave@1.0.0
+Mar-09 09:29:33.236 [main] INFO  o.pf4j.DefaultPluginStatusProvider - Enabled plugins: []
+Mar-09 09:29:33.237 [main] INFO  o.pf4j.DefaultPluginStatusProvider - Disabled plugins: []
+Mar-09 09:29:33.241 [main] INFO  org.pf4j.DefaultPluginManager - PF4J version 3.4.1 in 'deployment' mode
+Mar-09 09:29:33.250 [main] INFO  org.pf4j.AbstractPluginManager - No plugins
+Mar-09 09:29:33.337 [main] DEBUG nextflow.cli.CmdRun - Applied DSL=2 by global default
+Mar-09 09:29:33.344 [main] INFO  nextflow.cli.CmdRun - Launching `test.nf` [fabulous_pasteur] DSL2 - revision: e059723b92
+Mar-09 09:29:33.345 [main] DEBUG nextflow.plugin.PluginsFacade - Plugins default=[]
+Mar-09 09:29:33.346 [main] DEBUG nextflow.plugin.PluginsFacade - Plugins resolved requirement=[]
+Mar-09 09:29:33.362 [main] DEBUG n.secret.LocalSecretsProvider - Secrets store: /home/mminkova3/.nextflow/secrets/store.json
+Mar-09 09:29:33.380 [main] DEBUG nextflow.secret.SecretsLoader - Discovered secrets providers: [nextflow.secret.LocalSecretsProvider@2b960a7] - activable => nextflow.secret.LocalSecretsProvider@2b960a7
+Mar-09 09:29:33.447 [main] DEBUG nextflow.Session - Session UUID: d742ef98-4309-4835-be1a-dda9c03c7499
+Mar-09 09:29:33.447 [main] DEBUG nextflow.Session - Run name: fabulous_pasteur
+Mar-09 09:29:33.449 [main] DEBUG nextflow.Session - Executor pool size: 2
+Mar-09 09:29:33.456 [main] DEBUG nextflow.file.FilePorter - File porter settings maxRetries=3; maxTransfers=50; pollTimeout=null
+Mar-09 09:29:33.461 [main] DEBUG nextflow.util.ThreadPoolBuilder - Creating thread pool 'FileTransfer' minSize=10; maxSize=10; workQueue=LinkedBlockingQueue[10000]; allowCoreThreadTimeout=false
+Mar-09 09:29:33.488 [main] DEBUG nextflow.cli.CmdRun - 
+  Version: 23.10.0 build 5891
+  Created: 15-10-2023 15:14 UTC (17:14 CEST)
+  System: Linux 5.15.0-133-generic
+  Runtime: Groovy 3.0.19 on OpenJDK 64-Bit Server VM 11.0.20+8
+  Encoding: UTF-8 (UTF-8)
+  Process: 2505670@ubuntummm [192.168.0.15]
+  CPUs: 1 - Mem: 7.8 GB (3 GB) - Swap: 0 (0)
+Mar-09 09:29:33.536 [main] DEBUG nextflow.Session - Work-dir: /home/mminkova3/Nextflow_EESSI/ansible/plugin-EESSI/work [ext2/ext3]
+Mar-09 09:29:33.537 [main] DEBUG nextflow.Session - Script base path does not exist or is not a directory: /home/mminkova3/Nextflow_EESSI/ansible/plugin-EESSI/bin
+Mar-09 09:29:33.573 [main] DEBUG nextflow.executor.ExecutorFactory - Extension executors providers=[GoogleLifeSciencesExecutor, AwsBatchExecutor, GoogleBatchExecutor]
+Mar-09 09:29:33.587 [main] DEBUG nextflow.Session - Observer factory: DefaultObserverFactory
+Mar-09 09:29:33.591 [main] DEBUG nextflow.Session - Observer factory: WaveFactory
+Mar-09 09:29:33.609 [main] DEBUG i.s.wave.plugin.config.WaveConfig - Wave strategy not specified - using default: [container, dockerfile, conda, spack]
+Mar-09 09:29:33.620 [main] DEBUG io.seqera.wave.plugin.WaveClient - Wave config: WaveConfig(enabled:null, endpoint:https://wave.seqera.io, containerConfigUrl:[], tokensCacheMaxDuration:30m, condaOpts:CondaOpts(mambaImage=mambaorg/micromamba:1.5.1; basePackages=conda-forge::procps-ng, commands=null), spackOpts:SpackOpts(basePackages=null, commands=null), strategy:[container, dockerfile, conda, spack], bundleProjectResources:null, buildRepository:null, cacheRepository:null, retryOpts:RetryOpts(delay:450ms, maxDelay:1m 30s, maxAttempts:10, jitter:0.25), httpClientOpts:HttpOpts(), freezeMode:null, dryRunMode:false)
+Mar-09 09:29:33.784 [main] DEBUG nextflow.Session - Observer factory: TowerFactory
+Mar-09 09:29:33.808 [main] DEBUG nextflow.cache.CacheFactory - Using Nextflow cache factory: nextflow.cache.DefaultCacheFactory
+Mar-09 09:29:33.817 [main] DEBUG nextflow.util.CustomThreadPool - Creating default thread pool > poolSize: 2; maxThreads: 1000
+Mar-09 09:29:33.968 [main] DEBUG nextflow.Session - Session start
+Mar-09 09:29:34.503 [main] DEBUG nextflow.script.ScriptRunner - > Launching execution
+Mar-09 09:29:34.515 [main] INFO  nextflow.script.BaseScript - Hello, Nextflow!
+Mar-09 09:29:34.517 [main] DEBUG nextflow.Session - Workflow process names [dsl2]: 
+Mar-09 09:29:34.517 [main] DEBUG nextflow.Session - Igniting dataflow network (0)
+Mar-09 09:29:34.518 [main] DEBUG nextflow.script.ScriptRunner - Parsed script files:
+  Script_49cab95e2f3ac9fb: /home/mminkova3/Nextflow_EESSI/ansible/plugin-EESSI/test.nf
+Mar-09 09:29:34.518 [main] DEBUG nextflow.script.ScriptRunner - > Awaiting termination 
+Mar-09 09:29:34.518 [main] DEBUG nextflow.Session - Session await
+Mar-09 09:29:34.518 [main] DEBUG nextflow.Session - Session await > all processes finished
+Mar-09 09:29:34.518 [main] DEBUG nextflow.Session - Session await > all barriers passed
+Mar-09 09:29:34.532 [main] DEBUG n.trace.WorkflowStatsObserver - Workflow completed > WorkflowStats[succeededCount=0; failedCount=0; ignoredCount=0; cachedCount=0; pendingCount=0; submittedCount=0; runningCount=0; retriesCount=0; abortedCount=0; succeedDuration=0ms; failedDuration=0ms; cachedDuration=0ms;loadCpus=0; loadMemory=0; peakRunning=0; peakCpus=0; peakMemory=0; ]
+Mar-09 09:29:34.613 [main] DEBUG nextflow.cache.CacheDB - Closing CacheDB done
+Mar-09 09:29:34.632 [main] DEBUG nextflow.util.ThreadPoolManager - Thread pool 'FileTransfer' shutdown completed (hard=false)
+Mar-09 09:29:34.632 [main] DEBUG nextflow.script.ScriptRunner - > Execution complete -- Goodbye
