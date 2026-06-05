@@ -1,16 +1,7 @@
 #!/bin/bash
-# /etc/profile.d/eessi_nextflow.sh
+# Set up the EESSI 2025.06 environment and load Nextflow.
 #
-# Set up the EESSI environment and load the Nextflow module
-
-# Define MODULEPATH and LMOD_LUA_PATH for EESSI and Lmod
-export MODULEPATH="/cvmfs/software.eessi.io/versions/2023.06/software/linux/x86_64/amd/zen2/modules/all:/cvmfs/software.eessi.io/host_injections/2023.06/software/linux/x86_64/amd/zen2/modules/all"
-export LMOD_LUA_PATH="/usr/share/lmod/lmod/libexec/?.lua;/usr/share/lmod/lmod/libexec/?/init.lua"
-
-# Source the EESSI initialization script if it exists
-if [ -f /cvmfs/software.eessi.io/versions/2023.06/init/bash ]; then
-    source /cvmfs/software.eessi.io/versions/2023.06/init/bash
-fi
-
-# Load the Nextflow module automatically
-module load Nextflow/23.10.0
+# Sourcing init/bash runs archdetect and configures MODULEPATH/Lmod for whatever
+# CPU this node has, so we don't hardcode an architecture-specific path.
+source /cvmfs/software.eessi.io/versions/2025.06/init/bash
+module load Nextflow/26.04.0

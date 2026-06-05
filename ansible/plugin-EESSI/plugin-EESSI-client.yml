@@ -69,21 +69,73 @@
           #!/bin/bash
           # /etc/profile.d/eessi_nextflow.sh
           #
-          # This script sets up the EESSI environment and loads the Nextflow module,
-          # making Nextflow available in every interactive shell.
-          
-          # Define MODULEPATH and LMOD_LUA_PATH for EESSI and Lmod
-          export MODULEPATH="/cvmfs/software.eessi.io/versions/2023.06/software/linux/x86_64/amd/zen2/modules/all:/cvmfs/software.eessi.io/host_injections/2023.06/software/linux/x86_64/amd/zen2/modules/all"
-          export LMOD_LUA_PATH="/usr/share/lmod/lmod/libexec/?.lua;/usr/share/lmod/lmod/libexec/?/init.lua"
-          
-          # Source the EESSI initialization script if it exists
-          if [ -f /cvmfs/software.eessi.io/versions/2023.06/init/bash ]; then
-              source /cvmfs/software.eessi.io/versions/2023.06/init/bash
+          # Sets up the EESSI 2025.06 environment and loads Nextflow, making it
+          # available in interactive shells.
+          #
+          # We source EESSI's own init script rather than hardcoding MODULEPATH:
+          # init/bash runs archdetect and sets MODULEPATH/Lmod for whatever CPU
+          # this node has (zen2/zen3/zen4/intel/neoverse/...), so the same plugin
+          # works on any SRC flavour.
+
+          # Skip for non-interactive shells: EESSI init prints a banner to stdout,
+          # which would corrupt scp/sftp/rsync sessions.
+          [ -z "$PS1" ] && return
+
+          if [ -r /cvmfs/software.eessi.io/versions/2025.06/init/bash ]; then
+              source /cvmfs/software.eessi.io/versions/2025.06/init/bash
+              module load Nextflow/26.04.0
           fi
-          
-          # Load the Nextflow module automatically
-          module load Nextflow/23.10.0
+
+          # Seed a per-user Nextflow config the first time, so runs automatically
+          # pick up the TES (Pulsar / TESP-API) settings. ~/.nextflow is writable,
+          # which Nextflow needs for plugin downloads (/etc/nextflow is not).
+          if [ ! -f "$HOME/.nextflow/config" ] && [ -f /etc/nextflow/nextflow.config ]; then
+              mkdir -p "$HOME/.nextflow"
+              cp /etc/nextflow/nextflow.config "$HOME/.nextflow/config"
+          fi
         mode: '0755'
         owner: root
-
         group: root
+
+    - name: Ensure /etc/nextflow exists
+      file:
+        path: /etc/nextflow
+        state: directory
+        mode: '0755'
+
+    - name: Deploy Nextflow TES (TESP-API / Pulsar) connection config
+      # Connects the Nextflow client to a GA4GH TES endpoint (TESP-API in front
+      # of Pulsar). Values come from SRC plugin parameters; keep the password in
+      # a secret parameter. Readable (0644) so it can be seeded into each user's
+      # ~/.nextflow/config -- on a multi-tenant node, prefer templating straight
+      # into the workspace user's home at 0600 instead.
+      copy:
+        dest: /etc/nextflow/nextflow.config
+        mode: '0644'
+        content: |
+          // Managed by Ansible (Nextflow_EESSI). GA4GH TES -> Pulsar via TESP-API.
+          //
+          // To make TES opt-in rather than the default executor, move the
+          // `process`/`tes` blocks into `profiles { tes { ... } }` and launch
+          // pipelines with `-profile tes`.
+          //
+          // IMPORTANT: the TES executor stages task inputs/outputs by URL, so the
+          // Nextflow work directory must live on object storage (e.g. S3/MinIO),
+          // not a local path. Launch with an object-store work dir, e.g.:
+          //     nextflow run <pipeline> -w s3://<bucket>/work
+          // and provide the matching credentials (e.g. an `aws { ... }` block).
+          // A local `-w ./work` will be rejected by TESP-API with
+          // "invalid or missing URL scheme".
+          plugins {
+              id 'nf-ga4gh'
+          }
+
+          process {
+              executor = 'tes'
+          }
+
+          tes {
+              endpoint      = '{{ src_tes_endpoint | default("http://localhost:8080") }}'
+              basicUsername = '{{ src_tes_username | default("") }}'
+              basicPassword = '{{ src_tes_password | default("") }}'
+          }

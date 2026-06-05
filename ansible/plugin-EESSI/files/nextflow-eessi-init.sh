@@ -1,48 +1,24 @@
 #!/bin/bash
+# Systemd service wrapper: set up EESSI 2025.06 + Nextflow, then idle.
 
-# Create log directory
 mkdir -p /var/log/nextflow
 LOGFILE="/var/log/nextflow/nextflow-service.log"
+EESSI_VERSION=2025.06
+NEXTFLOW_VERSION=26.04.0
 
-# Start logging
-echo "$(date): Starting simplified Nextflow service wrapper" > $LOGFILE
-echo "$(date): Initial environment check" >> $LOGFILE
-echo "PATH=$PATH" >> $LOGFILE
+echo "$(date): Starting Nextflow service wrapper" > "$LOGFILE"
 
-# Source the EESSI environment directly
-echo "$(date): Setting up EESSI environment" >> $LOGFILE
-export MODULEPATH="/cvmfs/software.eessi.io/versions/2023.06/software/linux/x86_64/amd/zen2/modules/all:/cvmfs/software.eessi.io/host_injections/2023.06/software/linux/x86_64/amd/zen2/modules/all"
-export LMOD_LUA_PATH="/usr/share/lmod/lmod/libexec/?.lua;/usr/share/lmod/lmod/libexec/?/init.lua"
-
-# Try sourcing each component separately and log any errors
-if [ -f /cvmfs/software.eessi.io/versions/2023.06/init/bash ]; then
-    echo "$(date): Sourcing EESSI base environment" >> $LOGFILE
-    source /cvmfs/software.eessi.io/versions/2023.06/init/bash >> $LOGFILE 2>&1
+# init/bash sets up MODULEPATH/Lmod for the detected architecture.
+if [ -f "/cvmfs/software.eessi.io/versions/${EESSI_VERSION}/init/bash" ]; then
+    echo "$(date): Sourcing EESSI ${EESSI_VERSION} environment" >> "$LOGFILE"
+    source "/cvmfs/software.eessi.io/versions/${EESSI_VERSION}/init/bash" >> "$LOGFILE" 2>&1
 else
-    echo "$(date): ERROR - EESSI base environment file not found" >> $LOGFILE
+    echo "$(date): ERROR - EESSI ${EESSI_VERSION} init not found" >> "$LOGFILE"
 fi
 
-if [ -f /usr/share/lmod/lmod/init/bash ]; then
-    echo "$(date): Initializing Lmod" >> $LOGFILE
-    source /usr/share/lmod/lmod/init/bash >> $LOGFILE 2>&1
-else
-    echo "$(date): ERROR - Lmod initialization file not found" >> $LOGFILE
-fi
+echo "$(date): Loading Nextflow/${NEXTFLOW_VERSION}" >> "$LOGFILE"
+module load "Nextflow/${NEXTFLOW_VERSION}" >> "$LOGFILE" 2>&1
+which nextflow >> "$LOGFILE" 2>&1 || echo "$(date): nextflow not found in PATH" >> "$LOGFILE"
 
-# Check if the module command is available
-echo "$(date): Checking for module command" >> $LOGFILE
-if command -v module >/dev/null 2>&1; then
-    echo "$(date): Module command found, loading Nextflow" >> $LOGFILE
-    module load Nextflow/23.10.0 >> $LOGFILE 2>&1
-    echo "$(date): Module load completed with status $?" >> $LOGFILE
-else
-    echo "$(date): ERROR - module command not found" >> $LOGFILE
-fi
-
-# Check for nextflow in path
-echo "$(date): Looking for nextflow in PATH" >> $LOGFILE
-which nextflow >> $LOGFILE 2>&1 || echo "$(date): nextflow not found in PATH" >> $LOGFILE
-
-# Keep the service running with simple sleep
-echo "$(date): Starting sleep loop" >> $LOGFILE
+echo "$(date): Ready; idling" >> "$LOGFILE"
 sleep infinity
