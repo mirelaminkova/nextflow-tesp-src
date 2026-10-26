@@ -1,3 +1,4 @@
+---
 name: e2e
 
 # Issue #3: Nextflow + nf-ga4gh runs a real pipeline on a tesp-api + Pulsar stack, behind nginx at /tes/ with
@@ -27,17 +28,26 @@ jobs:
       NXF_VER: 26.04.0
       NXF_ANSI_LOG: "false"
       TES_ENDPOINT: http://localhost:8088/tes
-      # Throwaway test credentials, the same as in tests/e2e/compose.basic-auth.yaml and nextflow.config.
+      # Throwaway test values, the only copy: compose.basic-auth.yaml and render-config.yml read them from here.
+      # The password has a quote, a backslash, `${` and base64 characters, so a run proves the Groovy escaping
+      # of the rendered config end to end.
       TES_USER: tes
-      TES_PASSWORD: tEsP+e2e/Pa55w0rd==
+      TES_PASSWORD: tEsP'e2e\${x}+/Pa55w0rd==
+      NF_WORKDIR: s3://tesp-test/work
+      # tesp-api's MinIO test service and its credentials (tesp-api docker-compose.yaml).
+      S3_ENDPOINT_URL: http://172.17.0.1:9000
+      S3_ACCESS_KEY_ID: tesp-test
+      S3_SECRET_ACCESS_KEY: tesp-test-secret
+      # Nextflow reads $NXF_HOME/config, which the login script seeds below.
+      NXF_HOME: ${{ github.workspace }}/../nxf-home
     steps:
       - name: check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
 
       - name: check out tesp-api
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           repository: mirelaminkova/tesp-api
           ref: ${{ env.TESP_API_REF }}
@@ -54,19 +64,42 @@ jobs:
             -v "$PWD/tests/e2e/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
             nginx:1.27-alpine
 
+      - name: set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: install ansible-core
+        # Same version as in ci.yml and .pre-commit-config.yaml.
+        run: pip install "ansible-core==2.21.5"
+
+      - name: render the catalog item's config and seed it like a login does
+        run: |
+          mkdir -p "$RUNNER_TEMP/etc"
+          ansible-playbook -i localhost, -c local tests/e2e/render-config.yml -e out="$RUNNER_TEMP/etc/tesp.config"
+          NEXTFLOW_TESP_CONFIG="$RUNNER_TEMP/etc/tesp.config" bash -c '. "$1"' bash ansible/plugin-EESSI/files/eessi_nextflow.sh
+          cat "$NXF_HOME/config"
+
       - name: set up Java
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad  # v6.1.0
         with:
           distribution: temurin
-          java-version: "21"
+          # EESSI's Nextflow/26.04.0 module runs on Java 25.
+          java-version: "25"
 
       - name: install Nextflow
+        # The self-contained release asset, checked against the SHA-256 that EESSI's easyconfig
+        # (easybuild-easyconfigs Nextflow-26.04.0.eb) pins for the same file.
+        env:
+          NXF_DIST_SHA256: 5e2b4a354b4d7634d7211b71417d61606878fb49e9b224b50ded6e2c69114870
         run: |
           mkdir -p "$RUNNER_TEMP/bin" "$RUNNER_TEMP/nf-logs"
-          cd "$RUNNER_TEMP/bin"
-          curl -fsSL https://get.nextflow.io | bash
+          curl -fsSL -o "$RUNNER_TEMP/bin/nextflow" \
+            "https://github.com/nextflow-io/nextflow/releases/download/v${NXF_VER}/nextflow-${NXF_VER}-dist"
+          echo "${NXF_DIST_SHA256}  $RUNNER_TEMP/bin/nextflow" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/bin/nextflow"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-          ./nextflow -version
+          "$RUNNER_TEMP/bin/nextflow" -version
 
       - name: wait for tesp-api
         run: |

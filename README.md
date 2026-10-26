@@ -81,8 +81,8 @@ pre-commit run --all-files --hook-stage pre-push
 | Static | yamllint, ansible-lint (production profile), `ansible-playbook --syntax-check`, shellcheck | `.pre-commit-config.yaml`, `.yamllint`, `.ansible-lint` |
 | Static, on push | ast-grep rules (no `ignore_errors`; `no_log` on tasks that use password or secret variables) with their own tests; semgrep `p/github-actions` and `p/secrets` | `sgconfig.yml`, `.ast-grep/` |
 | Unit | Ansible playbooks in `tests/` that inspect the plugin, run its login script against a stand-in EESSI, check parameter validation, and render the TESP config with hostile values; no root, CVMFS or network: `tests/run.sh` | `tests/` |
-| End to end | Nextflow against a tesp-api stack in CI ([#3](https://github.com/mirelaminkova/nextflow-tesp-src/issues/3)) | not yet |
+| End to end | CI only (needs Docker): tesp-api at the commit TESP-src pins, with Pulsar and MinIO, basic auth, and nginx at `/tes/`. The job renders this repo's config template, seeds it with the login script, and runs a two-process pipeline with Nextflow 26.04.0 on Java 25 against an `s3://` work dir. It checks the result, then checks that a wrong password fails with 401 | `.github/workflows/e2e.yml`, `tests/e2e/` |
 
-CI (`.github/workflows/ci.yml`) runs the same hooks and the unit tests, and needs no secrets. Hook and action versions are pinned to commit SHAs; the semgrep rule packs come from the semgrep registry at run time, so they can change without a commit here.
+CI (`.github/workflows/ci.yml`, `e2e.yml`) runs the same hooks, the unit tests and the end-to-end test, and needs no secrets. Hook and action versions are pinned to commit SHAs; the semgrep rule packs come from the semgrep registry at run time, so they can change without a commit here.
 
 Tasks that use password or secret variables carry `no_log: true`, which also hides their error messages. To debug a failing one, set `no_log: false` on that task temporarily, on a workspace whose credentials you may print.

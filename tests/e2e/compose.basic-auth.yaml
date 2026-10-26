@@ -1,10 +1,11 @@
 # Override for tesp-api's docker-compose.yaml (used through COMPOSE_FILE): turns on tesp-api's basic auth.
 # Dynaconf reads TESP_API_* (envvar_prefix in tesp_api/config/properties.py); __ nests into basic_auth.* of
-# settings.toml. The password has + / = in it, like a generated base64 password. Throwaway CI test value; keep it
-# in sync with nextflow.config.
+# settings.toml. The password comes from the e2e job's TES_PASSWORD; `@str` stops Dynaconf from parsing its
+# quotes and backslash as TOML.
+---
 services:
   tesp-api:
     environment:
       - TESP_API_BASIC_AUTH__ENABLE=true
-      - TESP_API_BASIC_AUTH__USERNAME=tes
-      - TESP_API_BASIC_AUTH__PASSWORD=tEsP+e2e/Pa55w0rd==
+      - TESP_API_BASIC_AUTH__USERNAME=${TES_USER:?}
+      - TESP_API_BASIC_AUTH__PASSWORD=@str ${TES_PASSWORD:?}
