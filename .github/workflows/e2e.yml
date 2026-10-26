@@ -1,0 +1,115 @@
+name: e2e
+
+# Issue #3: Nextflow + nf-ga4gh runs a real pipeline on a tesp-api + Pulsar stack, behind nginx at /tes/ with
+# basic auth, like on a TESP workspace. Needs no secrets; every credential in tests/e2e is a throwaway test value.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # The tesp-api commit TESP-src pins.
+      TESP_API_REF: 2d8496a0b5e04fa9b7723cd56e06d1c3343f9083
+      # tesp-api's own compose file plus our basic-auth override (paths relative to the tesp-api checkout).
+      COMPOSE_FILE: docker-compose.yaml:../tests/e2e/compose.basic-auth.yaml
+      NXF_VER: 26.04.0
+      NXF_ANSI_LOG: "false"
+      TES_ENDPOINT: http://localhost:8088/tes
+      # Throwaway test credentials, the same as in tests/e2e/compose.basic-auth.yaml and nextflow.config.
+      TES_USER: tes
+      TES_PASSWORD: tEsP+e2e/Pa55w0rd==
+    steps:
+      - name: check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: check out tesp-api
+        uses: actions/checkout@v7
+        with:
+          repository: mirelaminkova/tesp-api
+          ref: ${{ env.TESP_API_REF }}
+          path: tesp-api
+          persist-credentials: false
+
+      - name: start compose stack
+        working-directory: tesp-api
+        run: docker compose --profile pulsar up -d --build
+
+      - name: start nginx
+        run: |
+          docker run -d --name tes-nginx --network host \
+            -v "$PWD/tests/e2e/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+            nginx:1.27-alpine
+
+      - name: set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: install Nextflow
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" "$RUNNER_TEMP/nf-logs"
+          cd "$RUNNER_TEMP/bin"
+          curl -fsSL https://get.nextflow.io | bash
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          ./nextflow -version
+
+      - name: wait for tesp-api
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://localhost:8080/v1/service-info; then
+              echo "tesp-api is up"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "tesp-api did not answer on :8080 within 5 minutes" >&2
+          exit 1
+
+      - name: wait for pulsar
+        working-directory: tesp-api
+        run: |
+          for _ in $(seq 1 60); do
+            # Any HTTP response means Pulsar is listening.
+            if docker compose --profile pulsar exec -T pulsar_rest curl -sS -o /dev/null http://localhost:8913/; then
+              echo "pulsar is up"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "pulsar did not answer on :8913 within 5 minutes" >&2
+          exit 1
+
+      - name: check nginx proxy and basic auth
+        run: bash tests/e2e/check-proxy-auth.sh "$TES_ENDPOINT" "$TES_USER" "$TES_PASSWORD"
+
+      - name: run pipeline
+        working-directory: tests/e2e
+        run: nextflow -log "$RUNNER_TEMP/nf-logs/e2e.nextflow.log" run main.nf --outdir "$RUNNER_TEMP/results"
+
+      - name: check published result
+        run: |
+          ls -l "$RUNNER_TEMP/results"
+          diff -u tests/e2e/expected-result.txt "$RUNNER_TEMP/results/result.txt"
+
+      - name: negative check (wrong password)
+        working-directory: tests/e2e
+        run: bash run-negative.sh "$RUNNER_TEMP/nf-logs"
+
+      - name: dump logs on failure
+        if: failure()
+        run: bash tests/e2e/dump-debug.sh tesp-api "$RUNNER_TEMP/nf-logs" "$TES_USER" "$TES_PASSWORD"
