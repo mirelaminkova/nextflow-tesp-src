@@ -1,35 +1,38 @@
 ---
 - name: Configure node for access to the EESSI stack
   hosts: localhost
-  gather_facts: yes
+  gather_facts: true
   tasks:
     - name: Install prerequisites
-      apt:
+      ansible.builtin.apt:
         name:
           - sudo
           - wget
           - lmod
         state: present
-        update_cache: yes
+        update_cache: true
 
     - name: Download EESSI installation script
-      get_url:
+      ansible.builtin.get_url:
         url: https://raw.githubusercontent.com/EESSI/eessi-demo/23da78bd7cc56332cceb9567bf67be637af91946/scripts/install_cvmfs_eessi.sh
         dest: /tmp/install_cvmfs_eessi.sh
         mode: '0755'
 
     - name: Execute the EESSI installation script
-      shell: /tmp/install_cvmfs_eessi.sh
+      ansible.builtin.shell: /tmp/install_cvmfs_eessi.sh
       args:
         executable: /bin/bash
+      changed_when: true
 
     - name: Verify cvmfs_talk command
-      shell: "command -v cvmfs_talk"
+      # `command -v` is a shell builtin.
+      ansible.builtin.shell: "command -v cvmfs_talk"  # noqa: command-instead-of-shell
       register: cvmfs_talk_output
-      ignore_errors: yes
+      changed_when: false
+      failed_when: false
 
     - name: Fail if cvmfs_talk command not found
-      fail:
+      ansible.builtin.fail:
         msg: "'cvmfs_talk' command is not available. EESSI client installation failed."
       when: cvmfs_talk_output.rc != 0
 
@@ -37,68 +40,43 @@
       when: src_stratum1_host is defined
       block:
         - name: Copy domain template
-          copy:
+          ansible.builtin.copy:
             src: files/template-eessi-hpc.org.local
             dest: /etc/cvmfs/domain.d/eessi-hpc.org.local
             force: true
             mode: '0664'
 
         - name: Substitute template variables with values
-          replace:
+          ansible.builtin.replace:
             path: /etc/cvmfs/domain.d/eessi-hpc.org.local
             regexp: "{{ item.variable }}"
             replace: "{{ item.value }}"
           loop:
-            - { variable: "_src_stratum1_host_", value: "{{ src_stratum1_host }}" }
+            - {variable: "_src_stratum1_host_", value: "{{ src_stratum1_host }}"}
 
         - name: Update EESSI configuration
-          shell: cvmfs_config probe pilot.eessi-hpc.org
+          ansible.builtin.command: cvmfs_config probe pilot.eessi-hpc.org
+          changed_when: true
 
         - name: Probe Stratum 1 servers by geo location
-          shell: cvmfs_talk -i pilot.eessi-hpc.org host probe geo
+          ansible.builtin.command: cvmfs_talk -i pilot.eessi-hpc.org host probe geo
+          changed_when: true
 
 - name: Deploy EESSI Nextflow environment initialization
   hosts: localhost
-  become: yes
-  gather_facts: yes
+  become: true
+  gather_facts: true
   tasks:
-    - name: Create /etc/profile.d/eessi_nextflow.sh file
-      copy:
+    - name: Install the login script that loads Nextflow from EESSI
+      ansible.builtin.copy:
+        src: files/eessi_nextflow.sh
         dest: /etc/profile.d/eessi_nextflow.sh
-        content: |
-          #!/bin/bash
-          # /etc/profile.d/eessi_nextflow.sh
-          #
-          # Sets up the EESSI 2025.06 environment and loads Nextflow, making it
-          # available in interactive shells.
-          #
-          # We source EESSI's own init script rather than hardcoding MODULEPATH:
-          # init/bash runs archdetect and sets MODULEPATH/Lmod for whatever CPU
-          # this node has (zen2/zen3/zen4/intel/neoverse/...), so the same plugin
-          # works on any SRC flavour.
-
-          # Skip for non-interactive shells: EESSI init prints a banner to stdout,
-          # which would corrupt scp/sftp/rsync sessions.
-          [ -z "$PS1" ] && return
-
-          if [ -r /cvmfs/software.eessi.io/versions/2025.06/init/bash ]; then
-              source /cvmfs/software.eessi.io/versions/2025.06/init/bash
-              module load Nextflow/26.04.0
-          fi
-
-          # Seed a per-user Nextflow config the first time, so runs automatically
-          # pick up the TES (Pulsar / TESP-API) settings. ~/.nextflow is writable,
-          # which Nextflow needs for plugin downloads (/etc/nextflow is not).
-          if [ ! -f "$HOME/.nextflow/config" ] && [ -f /etc/nextflow/nextflow.config ]; then
-              mkdir -p "$HOME/.nextflow"
-              cp /etc/nextflow/nextflow.config "$HOME/.nextflow/config"
-          fi
-        mode: '0755'
+        mode: '0644'
         owner: root
         group: root
 
     - name: Ensure /etc/nextflow exists
-      file:
+      ansible.builtin.file:
         path: /etc/nextflow
         state: directory
         mode: '0755'
@@ -109,11 +87,12 @@
       # a secret parameter. Readable (0644) so it can be seeded into each user's
       # ~/.nextflow/config -- on a multi-tenant node, prefer templating straight
       # into the workspace user's home at 0600 instead.
-      copy:
+      no_log: true
+      ansible.builtin.copy:
         dest: /etc/nextflow/nextflow.config
         mode: '0644'
         content: |
-          // Managed by Ansible (Nextflow_EESSI). GA4GH TES -> Pulsar via TESP-API.
+          // Managed by Ansible (nextflow-tesp-src). GA4GH TES -> Pulsar via TESP-API.
           //
           // To make TES opt-in rather than the default executor, move the
           // `process`/`tes` blocks into `profiles { tes { ... } }` and launch

@@ -1,0 +1,157 @@
+---
+# Checks the EESSI + Nextflow plugin without root, CVMFS or network:
+#
+#   ansible-playbook -i localhost, -c local tests/plugin-eessi.yml
+#
+# Scratch files go to a temporary directory that is removed afterwards.
+- name: Check the EESSI + Nextflow plugin
+  hosts: localhost
+  gather_facts: false
+  vars:
+    plugin_dir: "{{ playbook_dir }}/../ansible/plugin-EESSI"
+    plugin_plays: "{{ lookup('ansible.builtin.file', plugin_dir ~ '/plugin-EESSI-client.yml') | from_yaml }}"
+    # Tasks of every play, with the tasks of top-level blocks inlined.
+    plugin_top_tasks: "{{ plugin_plays | map(attribute='tasks') | flatten }}"
+    plugin_tasks: >-
+      {{ plugin_top_tasks + (plugin_top_tasks | selectattr('block', 'defined')
+                             | map(attribute='block') | flatten) }}
+    # Module arguments of every task, by module (short or FQCN name). Task keys
+    # contain dots, so look them up with dict2items, not attribute paths.
+    plugin_modules: "{{ plugin_tasks | map('dict2items') | flatten }}"
+    copy_args: >-
+      {{ plugin_modules | selectattr('key', 'in', ['copy', 'ansible.builtin.copy'])
+         | map(attribute='value') | list }}
+    template_args: >-
+      {{ plugin_modules | selectattr('key', 'in', ['template', 'ansible.builtin.template'])
+         | map(attribute='value') | list }}
+    # src of every copy/template task, relative to the plugin directory.
+    plugin_sources: >-
+      {{ (copy_args + template_args) | selectattr('src', 'defined')
+         | map(attribute='src') | list }}
+    profile_copy: >-
+      {{ copy_args | selectattr('dest', 'defined')
+         | selectattr('dest', 'equalto', '/etc/profile.d/eessi_nextflow.sh')
+         | first | default({}) }}
+    profile_script: "{{ plugin_dir }}/files/eessi_nextflow.sh"
+  tasks:
+    - name: List files shipped with the plugin
+      ansible.builtin.find:
+        paths: "{{ plugin_dir }}/files"
+        recurse: true
+      register: shipped
+
+    - name: Every shipped file is used by the playbook, and every used file exists
+      ansible.builtin.assert:
+        that:
+          - unused | length == 0
+          - missing | length == 0
+        fail_msg: "unused: {{ unused }}; missing: {{ missing }}"
+      vars:
+        shipped_rel: >-
+          {{ shipped.files | map(attribute='path')
+             | map('regex_replace', '^' ~ (plugin_dir | realpath) ~ '/', '') | list }}
+        unused: "{{ shipped_rel | difference(plugin_sources) }}"
+        missing: "{{ plugin_sources | difference(shipped_rel) }}"
+
+    - name: The profile script is installed from files/, not inline content
+      ansible.builtin.assert:
+        that:
+          - profile_copy.src | default('') == 'files/eessi_nextflow.sh'
+          - profile_copy.content is not defined
+          # Login shells of every user must be able to read it.
+          - profile_copy.mode == '0644'
+          - profile_copy.owner == 'root' and profile_copy.group == 'root'
+
+    - name: Create scratch home
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: nf-profile
+      register: scratch
+
+    # The script's absolute paths are pointed at stand-ins in the scratch dir:
+    # an EESSI init/bash that prints a banner and logs `module` calls, and a
+    # system Nextflow config to seed.
+    - name: Run the profile script, clean up
+      block:
+        - name: Create stand-in EESSI init and system config
+          ansible.builtin.copy:
+            dest: "{{ scratch.path }}/{{ item.dest }}"
+            content: "{{ item.content }}"
+            mode: '0644'
+          loop:
+            - dest: init-bash
+              content: |
+                echo "EESSI banner"
+                module() { echo "module $*" >> "$HOME/module.log"; }
+            - dest: nextflow.config
+              content: "// system config\n"
+
+        - name: Create a home per scenario
+          ansible.builtin.file:
+            path: "{{ scratch.path }}/{{ item }}"
+            state: directory
+            mode: '0700'
+          loop: [noninteractive, interactive, no-eessi]
+
+        - name: Point the script at the stand-ins
+          ansible.builtin.copy:
+            dest: "{{ scratch.path }}/profile.sh"
+            content: >-
+              {{ lookup('ansible.builtin.file', profile_script)
+                 | replace('/cvmfs/software.eessi.io/versions/2025.06/init/bash', scratch.path ~ '/init-bash')
+                 | replace('/etc/nextflow/nextflow.config', scratch.path ~ '/nextflow.config') }}
+            mode: '0644'
+
+        - name: Source it from a non-interactive shell
+          ansible.builtin.command:
+            argv: [bash, -c, '. "$1"; echo "rc=$?"', bash, "{{ scratch.path }}/profile.sh"]
+          environment:
+            HOME: "{{ scratch.path }}/noninteractive"
+          register: noninteractive
+          changed_when: false
+
+        - name: Non-interactive shells get no output (it would break scp/sftp) and no EESSI
+          ansible.builtin.assert:
+            that:
+              - noninteractive.stdout == 'rc=0' and noninteractive.stderr == ''
+              - not (scratch.path ~ '/noninteractive/module.log') is exists
+            fail_msg: "{{ noninteractive | to_json }}"
+
+        - name: Source it from an interactive shell
+          ansible.builtin.command:
+            argv: [bash, -c, 'PS1="$ "; . "$1"; echo "rc=$?"', bash, "{{ scratch.path }}/profile.sh"]
+          environment:
+            HOME: "{{ scratch.path }}/interactive"
+          register: interactive
+          changed_when: false
+
+        - name: Interactive shells load Nextflow from EESSI and get the system config
+          ansible.builtin.assert:
+            that:
+              - interactive.stdout_lines == ['EESSI banner', 'rc=0'] and interactive.stderr == ''
+              - lookup('ansible.builtin.file', scratch.path ~ '/interactive/module.log') == 'module load Nextflow/26.04.0'
+              - lookup('ansible.builtin.file', scratch.path ~ '/interactive/.nextflow/config') == '// system config'
+            fail_msg: "{{ interactive | to_json }}"
+
+        - name: Remove the stand-in EESSI init
+          ansible.builtin.file:
+            path: "{{ scratch.path }}/init-bash"
+            state: absent
+
+        - name: Source it on a node without EESSI
+          ansible.builtin.command:
+            argv: [bash, -c, 'PS1="$ "; . "$1"; echo "rc=$?"', bash, "{{ scratch.path }}/profile.sh"]
+          environment:
+            HOME: "{{ scratch.path }}/no-eessi"
+          register: no_eessi
+          changed_when: false
+
+        - name: Without EESSI the login still succeeds quietly
+          ansible.builtin.assert:
+            that: no_eessi.stdout == 'rc=0' and no_eessi.stderr == ''
+            fail_msg: "{{ no_eessi | to_json }}"
+      always:
+        - name: Remove scratch home
+          ansible.builtin.file:
+            path: "{{ scratch.path }}"
+            state: absent
