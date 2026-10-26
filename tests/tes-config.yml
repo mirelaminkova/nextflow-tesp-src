@@ -269,7 +269,7 @@
             dest: "{{ scratch.path }}/home/.nextflow/config"
             content: |
               // Managed by Ansible (nextflow-tesp-src). GA4GH TES -> Pulsar via TESP-API.
-              tes { endpoint = 'http://localhost:8080' }
+              aws { accessKey = 'the-users-own-key' }
             mode: '0644'
 
         - name: Log in after the upgrade
@@ -280,11 +280,30 @@
             NEXTFLOW_TESP_CONFIG: "{{ scratch.path }}/tesp.config"
           changed_when: false
 
-        - name: The old copy is replaced by the include
+        - name: The old copy is replaced by the include, and kept with the user's edits
           ansible.builtin.assert:
-            that: >-
-              lookup('ansible.builtin.file', scratch.path ~ '/home/.nextflow/config')
-              == "includeConfig '" ~ scratch.path ~ "/tesp.config'"
+            that:
+              - >-
+                lookup('ansible.builtin.file', scratch.path ~ '/home/.nextflow/config')
+                == "includeConfig '" ~ scratch.path ~ "/tesp.config'"
+              - >-
+                'the-users-own-key'
+                in lookup('ansible.builtin.file', scratch.path ~ '/home/.nextflow/config.pre-tesp')
+
+        - name: Log in with a config directory that can't be written, under set -eu
+          ansible.builtin.command:
+            argv: [bash, -c, 'set -eu; PS1=; . "$1"; echo "rc=$?"', bash, "{{ profile_script }}"]
+          environment:
+            HOME: "{{ scratch.path }}/home"
+            NXF_HOME: /proc/nxf-home
+            NEXTFLOW_TESP_CONFIG: "{{ scratch.path }}/tesp.config"
+          register: readonly_login
+          changed_when: false
+
+        - name: The login goes on quietly
+          ansible.builtin.assert:
+            that: readonly_login.stdout == 'rc=0' and readonly_login.stderr == ''
+            fail_msg: "{{ readonly_login | to_json }}"
 
         - name: Log in with NXF_HOME set
           ansible.builtin.command:

@@ -16,7 +16,7 @@ The repository started as the `nf-tesp` branch of [mirelaminkova/Nextflow_EESSI]
 | Loads EESSI 2025.06 and `Nextflow/26.04.0` in interactive login shells | `files/eessi_nextflow.sh` |
 | Writes the TESP settings to `/etc/nextflow/tesp.config` | `templates/tesp.config.j2` |
 
-At every login shell (an SSH or desktop login; `ssh host cmd`, `scp` and `sftp` don't read `/etc/profile.d`), the login script creates a missing `~/.nextflow/config` (or `$NXF_HOME/config`, as set before `/etc/profile.d` runs) containing only `includeConfig '/etc/nextflow/tesp.config'`. Re-running the playbook with a new endpoint or password therefore reaches every user. A full copy left by earlier versions of this component is replaced the same way. Any other config is the user's own and is left alone: add the `includeConfig` line to it yourself. EESSI and Nextflow are only loaded in interactive shells, because EESSI prints a banner that would break `scp`, `sftp` and `rsync`.
+At every login shell (an SSH or desktop login; `ssh host cmd`, `scp` and `sftp` don't read `/etc/profile.d`), the login script creates a missing `~/.nextflow/config` (or `$NXF_HOME/config`, as set before `/etc/profile.d` runs) containing only `includeConfig '/etc/nextflow/tesp.config'`. Re-running the playbook with a new endpoint or password therefore reaches every user. A full copy left by earlier versions of this component is moved to `config.pre-tesp` and replaced the same way; copy any settings you added to it back into `~/.nextflow/config`. Any other config is the user's own and is left alone: add the `includeConfig` line to it yourself. EESSI and Nextflow are only loaded in interactive shells, because EESSI prints a banner that would break `scp`, `sftp` and `rsync`.
 
 ## Connecting to TESP
 
@@ -56,7 +56,7 @@ Without `src_tes_endpoint`, `/etc/nextflow/tesp.config` holds only comments and 
 - the TES password: on SRC everyone who can log in is a member of the CO, the same people who can open the TESP welcome page that shows it;
 - the S3 key pair, if set: TESP never shows that key, so this file widens who can read it. Use a key that only grants access to the buckets meant for this work, and don't use this component on a workspace shared beyond the CO.
 
-**Allowed values:** the playbook validates the parameters (strict URLs without quotes or credentials, a valid bucket name, both S3 keys or neither, no control characters) and escapes them for Groovy. A password or key may contain any printable character except the Ansible template markers `{{`, `{%` and `{#`: Ansible evaluates parameters as templates before this playbook sees them. TESP's generated passwords are base64, so they never contain them.
+**Allowed values:** the playbook validates the parameters (strict URLs without quotes or credentials, a valid bucket name, both S3 keys or neither, no control characters) and escapes them for Groovy. A password or key may contain any printable character except the Ansible template markers `{{`, `{%` and `{#`; leading and trailing whitespace is removed, as in TESP: Ansible evaluates parameters as templates before this playbook sees them. TESP's generated passwords are base64, so they never contain them.
 
 ## Checks
 
