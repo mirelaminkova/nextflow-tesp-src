@@ -44,14 +44,6 @@ workflow {
     UPPER(channel.fromPath(params.input, checkIfExists: true))
     COUNT(UPPER.out)
 
-    COUNT.out
-        .map { result ->
-            def expected = 'HELLO TESP\nFROM NEXTFLOW\nlines=2\n'
-            def text = result.text
-            if( text != expected ) {
-                error("result.txt has unexpected content: ${text.inspect()} (expected ${expected.inspect()})")
-            }
-            "E2E OK: ${result.name} has the expected content"
-        }
-        .view()
+    // The e2e job compares the published file with expected-result.txt.
+    COUNT.out.view { result -> "published ${result.name}" }
 }

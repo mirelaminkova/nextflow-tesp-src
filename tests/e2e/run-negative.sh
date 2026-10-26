@@ -11,7 +11,7 @@ nf_log="$out_dir/negative.nextflow.log"
 
 if nextflow -log "$nf_log" run main.nf \
         -c wrong-password.config \
-        -work-dir s3://tesp-test/work-negative \
+        -work-dir "${NF_WORKDIR:?}-negative" \
         --outdir "$out_dir/results" > "$console" 2>&1; then
     cat "$console"
     echo "nextflow run succeeded with a wrong TES password; basic auth is not enforced" >&2

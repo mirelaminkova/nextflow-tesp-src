@@ -34,7 +34,9 @@ jobs:
       TES_USER: tes
       TES_PASSWORD: tEsP'e2e\${x}+/Pa55w0rd==
       NF_WORKDIR: s3://tesp-test/work
-      # tesp-api's MinIO test service and its credentials (tesp-api docker-compose.yaml).
+      # tesp-api's MinIO test service and its credentials (tesp-api docker-compose.yaml). The docker bridge
+      # address, not localhost: the presigned URLs must work both from the runner (Nextflow) and from the
+      # staging containers Pulsar starts.
       S3_ENDPOINT_URL: http://172.17.0.1:9000
       S3_ACCESS_KEY_ID: tesp-test
       S3_SECRET_ACCESS_KEY: tesp-test-secret
@@ -77,6 +79,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/etc"
           ansible-playbook -i localhost, -c local tests/e2e/render-config.yml -e out="$RUNNER_TEMP/etc/tesp.config"
+          # Source the login script non-interactively: it seeds $NXF_HOME/config, then returns before EESSI.
           NEXTFLOW_TESP_CONFIG="$RUNNER_TEMP/etc/tesp.config" bash -c '. "$1"' bash ansible/plugin-EESSI/files/eessi_nextflow.sh
           cat "$NXF_HOME/config"
 
@@ -101,6 +104,7 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/bin/nextflow" -version
 
+      # The two wait loops are copied from tesp-api's .github/workflows/ci.yaml at TESP_API_REF.
       - name: wait for tesp-api
         run: |
           for _ in $(seq 1 60); do
@@ -127,6 +131,18 @@ jobs:
           echo "pulsar did not answer on :8913 within 5 minutes" >&2
           exit 1
 
+      - name: wait for minio
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://172.17.0.1:9000/minio/health/ready; then
+              echo "minio is up"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "minio did not answer on 172.17.0.1:9000 within 5 minutes" >&2
+          exit 1
+
       - name: check nginx proxy and basic auth
         run: bash tests/e2e/check-proxy-auth.sh "$TES_ENDPOINT" "$TES_USER" "$TES_PASSWORD"
 
@@ -138,6 +154,17 @@ jobs:
         run: |
           ls -l "$RUNNER_TEMP/results"
           diff -u tests/e2e/expected-result.txt "$RUNNER_TEMP/results/result.txt"
+
+      - name: check the tasks ran on TES
+        # Without this, a config that silently fell back to the local executor would produce the same result.
+        run: |
+          curl -fsS -u "$TES_USER:$TES_PASSWORD" "$TES_ENDPOINT/v1/tasks?view=MINIMAL" |
+            python3 -c '
+          import json, sys
+          states = [t["state"] for t in json.load(sys.stdin).get("tasks", [])]
+          print("TES task states:", states)
+          sys.exit(0 if states.count("COMPLETE") >= 2 else "expected at least 2 COMPLETE TES tasks")
+          '
 
       - name: negative check (wrong password)
         working-directory: tests/e2e
