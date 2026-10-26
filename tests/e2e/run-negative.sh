@@ -19,10 +19,14 @@ if nextflow -log "$nf_log" run main.nf \
 fi
 cat "$console"
 
-if grep -iEq '401|unauthori' "$console" "$nf_log"; then
+# Only the console's error report counts: the Nextflow log also holds URL-encoded plugin pins such as
+# nf-ga4gh%401.5.0, so a bare "401" would match there whatever the failure was.
+auth_error='(^|[^%[:alnum:]])401([^.[:alnum:]]|$)|unauthori[sz]ed'
+if grep -iEq "$auth_error" "$console"; then
     echo "nextflow run failed as expected, rejected by TES basic auth:"
-    grep -ihE '401|unauthori' "$console" "$nf_log" | head -n 5
+    grep -iE "$auth_error" "$console" | head -n 5
     exit 0
 fi
-echo "nextflow run failed, but not with 401/Unauthorized; see $nf_log" >&2
+echo "nextflow run failed, but not with 401/Unauthorized:" >&2
+tail -n 50 "$nf_log" >&2
 exit 1
