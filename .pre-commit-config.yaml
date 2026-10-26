@@ -1,0 +1,65 @@
+---
+# Install both stages once per clone:
+#   pre-commit install --hook-type pre-commit --hook-type pre-push
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+default_language_version:
+  python: python3
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: detect-private-key
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+        args: [--strict]
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+  - repo: https://github.com/ansible/ansible-lint
+    rev: v26.10.1
+    hooks:
+      - id: ansible-lint
+        # The hook asks for python3.14 by default.
+        language_version: python3
+  - repo: local
+    hooks:
+      - id: ansible-syntax-check
+        name: ansible-playbook --syntax-check
+        entry: ansible-playbook -i localhost, --syntax-check
+        language: python
+        additional_dependencies: [ansible-core==2.21.5]
+        files: ^ansible/plugin-EESSI/plugin-EESSI-client\.yml$
+      - id: unit-tests
+        name: unit tests (tests/*.yml)
+        entry: tests/run.sh
+        language: python
+        additional_dependencies: [ansible-core==2.21.5]
+        pass_filenames: false
+        files: ^(ansible|tests)/
+      # Static analysis on every push; a finding blocks the push.
+      - id: ast-grep
+        name: ast-grep scan (+ rule tests)
+        entry: bash -c 'ast-grep test --skip-snapshot-tests && ast-grep scan'
+        language: python
+        additional_dependencies: [ast-grep-cli==0.51.0]
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+      - id: semgrep
+        name: semgrep (GitHub Actions + secrets rules)
+        entry: >-
+          semgrep scan --metrics=off --disable-version-check --quiet --error
+          --config p/github-actions --config p/secrets
+        language: python
+        additional_dependencies: [semgrep==1.182.1]
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

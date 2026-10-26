@@ -1,91 +1,55 @@
-# SRC plugins
+# Nextflow + TESP on SURF Research Cloud
 
+This repository holds the Ansible playbook for a **Nextflow** component on [SURF Research Cloud](https://portal.live.surfresearchcloud.nl/) (SRC). It installs the [EESSI](https://www.eessi.io/) client, loads Nextflow 26.04.0 from the EESSI 2025.06 stack at login, and configures Nextflow's GA4GH TES executor so pipelines can run on a [TESP workspace](https://github.com/mirelaminkova/TESP-src) (TESP-API in front of Pulsar and SLURM).
 
+The repository started as the `nf-tesp` branch of [mirelaminkova/Nextflow_EESSI](https://github.com/mirelaminkova/Nextflow_EESSI). Only the EESSI/Nextflow plugin and its history were kept.
 
-## Getting started
+## What the playbook does
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+`ansible/plugin-EESSI/plugin-EESSI-client.yml` (the SRC catalog item points at this path, so don't move it):
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+| Step | Files |
+| --- | --- |
+| Installs `lmod` and the EESSI CVMFS client, and checks that `cvmfs_talk` works | first play |
+| Adds a private Stratum 1 when `src_stratum1_host` is set | `files/template-eessi-hpc.org.local` |
+| Loads EESSI 2025.06 and `Nextflow/26.04.0` in interactive login shells | `files/eessi_nextflow.sh` → `/etc/profile.d/` |
+| Writes the Nextflow TES config and seeds it into each user's `~/.nextflow/config` on first login | `/etc/nextflow/nextflow.config` |
 
-## Add your files
+The login script does nothing in non-interactive shells: EESSI prints a banner, which would break `scp`, `sftp` and `rsync`.
 
-- [ ] [Create](https://gitlab.com/-/experiment/new_project_readme_content:0f0e7b3dc10e37ce661e506ca242515b?https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://gitlab.com/-/experiment/new_project_readme_content:0f0e7b3dc10e37ce661e506ca242515b?https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://gitlab.com/-/experiment/new_project_readme_content:0f0e7b3dc10e37ce661e506ca242515b?https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+## Component parameters
 
+| Parameter | Meaning |
+| --- | --- |
+| `src_stratum1_host` | Optional private EESSI Stratum 1 |
+| `src_tes_endpoint` | TES base URL of the TESP workspace |
+| `src_tes_username`, `src_tes_password` | TES Basic auth credentials (give the password as a secret) |
+
+Connecting to a TESP workspace with an S3 work directory is being reworked in [#2](https://github.com/mirelaminkova/nextflow-tesp-src/issues/2).
+
+## Checks
+
+Install the hooks once per clone. Linters and unit tests run on commit; ast-grep and semgrep run on push and block it on findings:
+
+```bash
+pre-commit install --hook-type pre-commit --hook-type pre-push
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/ahmad-surf/rsc-plugins.git
-git branch -M main
-git push -uf origin main
+
+Run everything by hand:
+
+```bash
+pre-commit run --all-files
 ```
 
-## Integrate with your tools
+```bash
+pre-commit run --all-files --hook-stage pre-push
+```
 
-- [ ] [Set up project integrations](https://gitlab.com/-/experiment/new_project_readme_content:0f0e7b3dc10e37ce661e506ca242515b?https://docs.gitlab.com/ee/user/project/integrations/)
+| Level | What | Where |
+| --- | --- | --- |
+| Static | yamllint, ansible-lint (production profile), `ansible-playbook --syntax-check`, shellcheck | `.pre-commit-config.yaml`, `.yamllint`, `.ansible-lint` |
+| Static, on push | ast-grep rules (no `ignore_errors`; `no_log` on tasks that use password or secret variables) with their own tests; semgrep `p/github-actions` and `p/secrets` | `sgconfig.yml`, `.ast-grep/` |
+| Unit | Ansible playbooks in `tests/` that inspect the plugin and run its scripts without root, CVMFS or network: `tests/run.sh` | `tests/` |
+| End to end | Nextflow against a tesp-api stack in CI ([#3](https://github.com/mirelaminkova/nextflow-tesp-src/issues/3)) | not yet |
 
-## Collaborate with your team
-
-- [ ] [Invite team members and collaborators](https://gitlab.com/-/experiment/new_project_readme_content:0f0e7b3dc10e37ce661e506ca242515b?https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://gitlab.com/-/experiment/new_project_readme_content:0f0e7b3dc10e37ce661e506ca242515b?https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://gitlab.com/-/experiment/new_project_readme_content:0f0e7b3dc10e37ce661e506ca242515b?https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Automatically merge when pipeline succeeds](https://gitlab.com/-/experiment/new_project_readme_content:0f0e7b3dc10e37ce661e506ca242515b?https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-- [ ] [Get started with GitLab CI/CD](https://gitlab.com/-/experiment/new_project_readme_content:0f0e7b3dc10e37ce661e506ca242515b?https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing(SAST)](https://gitlab.com/-/experiment/new_project_readme_content:0f0e7b3dc10e37ce661e506ca242515b?https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://gitlab.com/-/experiment/new_project_readme_content:0f0e7b3dc10e37ce661e506ca242515b?https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://gitlab.com/-/experiment/new_project_readme_content:0f0e7b3dc10e37ce661e506ca242515b?https://docs.gitlab.com/ee/user/clusters/agent/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!).  Thank you to [makeareadme.com](https://gitlab.com/-/experiment/new_project_readme_content:0f0e7b3dc10e37ce661e506ca242515b?https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
-
+CI (`.github/workflows/ci.yml`) runs the same hooks and the unit tests, and needs no secrets.
