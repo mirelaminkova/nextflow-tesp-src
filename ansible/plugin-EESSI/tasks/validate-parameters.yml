@@ -1,0 +1,44 @@
+---
+# Rejects invalid component parameters before anything is installed. Values
+# end up in Groovy string literals, so no quotes, backslashes in URLs, or
+# control characters (newlines) where they aren't needed.
+- name: Check the TES endpoint
+  ansible.builtin.assert:
+    that:
+      - nf_tes_endpoint is match('^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$')
+    fail_msg: >-
+      src_tes_endpoint must be an http(s) URL without credentials, query or
+      quotes, e.g. https://<tesp-workspace>/tes
+    quiet: true
+  when: nf_tes_enabled | bool
+
+- name: Check the TES credentials and work directory
+  ansible.builtin.assert:
+    that:
+      - nf_tes_username is match('^[A-Za-z0-9._-]+$')
+      - nf_tes_password | length > 0
+      - nf_tes_password is not search('[\x00-\x1f\x7f]')
+      - nf_workdir is match('^s3://[a-z0-9][a-z0-9.-]{1,61}[a-z0-9](/[A-Za-z0-9._~/-]*)?$')
+    fail_msg: >-
+      With src_tes_endpoint set, src_tes_password (no control characters) and
+      src_nf_workdir (s3://<bucket>/<prefix>) are required; src_tes_username
+      may only hold letters, digits, '.', '_' and '-'.
+    quiet: true
+  no_log: true
+  when: nf_tes_enabled | bool
+
+- name: Check the S3 settings
+  ansible.builtin.assert:
+    that:
+      - nf_s3_endpoint_url == '' or nf_s3_endpoint_url is match('^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$')
+      - nf_s3_region is match('^[a-z0-9-]+$')
+      - nf_s3_addressing_style in ['path', 'virtual', 'auto']
+      - (nf_s3_access_key_id | length > 0) == (nf_s3_secret_access_key | length > 0)
+      - (nf_s3_access_key_id ~ nf_s3_secret_access_key) is not search('[\x00-\x1f\x7f]')
+    fail_msg: >-
+      src_s3_endpoint_url must be an http(s) URL, src_s3_region lower-case
+      letters, digits and '-', src_s3_addressing_style one of path, virtual or
+      auto; set both or neither of src_s3_access_key_id and
+      src_s3_secret_access_key, without control characters.
+    quiet: true
+  no_log: true

@@ -10,23 +10,49 @@ The repository started as the `nf-tesp` branch of [mirelaminkova/Nextflow_EESSI]
 
 | Step | Files |
 | --- | --- |
+| Checks the component parameters before installing anything | `tasks/validate-parameters.yml`, `vars/tes.yml` |
 | Installs `lmod` and the EESSI CVMFS client, and checks that `cvmfs_talk` is installed | first play |
 | Adds a private Stratum 1 when `src_stratum1_host` is set | `files/template-eessi-hpc.org.local` |
 | Loads EESSI 2025.06 and `Nextflow/26.04.0` in interactive login shells | `files/eessi_nextflow.sh` |
-| Writes the Nextflow TES config to `/etc/nextflow/nextflow.config`; the login script copies it to `~/.nextflow/config` on first login | first play (inline) |
+| Writes the TESP settings to `/etc/nextflow/tesp.config` | `templates/tesp.config.j2` |
 
-The login script does nothing in non-interactive shells: EESSI prints a banner, which would break `scp`, `sftp` and `rsync`.
+At every login, including non-interactive ones, the login script creates a missing `~/.nextflow/config` (or `$NXF_HOME/config`) containing only `includeConfig '/etc/nextflow/tesp.config'`. Re-running the playbook with a new endpoint or password therefore reaches every user. A config the user already has is left alone: add the `includeConfig` line to it yourself. EESSI and Nextflow are only loaded in interactive shells, because EESSI prints a banner that would break `scp`, `sftp` and `rsync`.
 
-## Component parameters
+## Connecting to TESP
+
+1. Create a [TESP workspace](https://github.com/mirelaminkova/TESP-src) with S3 storage configured (TESP README, "Using S3"). Its welcome page shows the TES base URL (`https://<tesp-workspace>/tes`) and the password for user `tes`.
+2. Create the Nextflow workspace with these component parameters:
 
 | Parameter | Default | Secret | Meaning |
 | --- | --- | --- | --- |
+| `src_tes_endpoint` | empty: TES off | no | TES base URL from the TESP welcome page |
+| `src_tes_username` | `tes` | no | TES Basic auth user |
+| `src_tes_password` | empty | **yes** | TES Basic auth password; required with an endpoint |
+| `src_nf_workdir` | empty | no | Nextflow work directory, `s3://<bucket>/<prefix>`; required with an endpoint |
+| `src_s3_endpoint_url` | empty (AWS S3) | no | Same S3 endpoint as TESP's `src_s3_endpoint_url` |
+| `src_s3_region` | `us-east-1` | no | Region to sign requests for |
+| `src_s3_access_key_id` | empty | **yes** | S3 access key; set both keys or neither |
+| `src_s3_secret_access_key` | empty | **yes** | S3 secret key |
+| `src_s3_addressing_style` | `path` | no | `path`, `virtual` or `auto`, as on TESP |
 | `src_stratum1_host` | unset | no | Private EESSI Stratum 1 |
-| `src_tes_endpoint` | `http://localhost:8080` | no | TES base URL of the TESP workspace |
-| `src_tes_username` | empty | no | TES Basic auth user |
-| `src_tes_password` | empty | **yes** | TES Basic auth password |
 
-Connecting to a TESP workspace with an S3 work directory is being reworked in [#2](https://github.com/mirelaminkova/nextflow-tesp-src/issues/2).
+3. Log in and run a pipeline. Tasks go to TESP, and the work directory is on S3:
+
+```bash
+nextflow run <pipeline>
+```
+
+Why the work directory must be on S3: Nextflow's TES executor (nf-ga4gh, pinned to 1.5.0) passes every task file, including `.command.run`, to TESP as a URL. tesp-api downloads `s3://` URLs with presigned requests, and rejects local paths. Nextflow itself reads and writes the same bucket, so give it a key pair that can write there. TESP uses its own key pair.
+
+What pipelines must do on TESP:
+- **Containers:** every process needs a `container`; TESP runs it with Apptainer.
+- **No glob outputs:** `path '*.txt'` outputs are refused ([mirelaminkova/tesp-api#29](https://github.com/mirelaminkova/tesp-api/issues/29)). Name output files explicitly.
+- **Resources:** `cpus` and `memory` become SLURM limits on the single TESP node, so cap them with `process.resourceLimits` to fit it.
+- **Run time:** tesp-api stops waiting for a task after about 27 minutes, queue time included.
+
+Without `src_tes_endpoint`, `/etc/nextflow/tesp.config` holds only comments and Nextflow runs tasks locally.
+
+**Who can read the credentials:** `/etc/nextflow/tesp.config` is readable by every account on the workspace (0644), because every user's Nextflow config includes it. On SRC everyone who can log in is a member of the CO, the same people who can open the TESP welcome page with these credentials. Don't use this component on a workspace shared beyond the CO. The playbook validates the values (no quotes or control characters in URLs, a valid bucket name, both keys or neither) and escapes them for Groovy, so a password can contain any printable character.
 
 ## Checks
 
@@ -50,7 +76,7 @@ pre-commit run --all-files --hook-stage pre-push
 | --- | --- | --- |
 | Static | yamllint, ansible-lint (production profile), `ansible-playbook --syntax-check`, shellcheck | `.pre-commit-config.yaml`, `.yamllint`, `.ansible-lint` |
 | Static, on push | ast-grep rules (no `ignore_errors`; `no_log` on tasks that use password or secret variables) with their own tests; semgrep `p/github-actions` and `p/secrets` | `sgconfig.yml`, `.ast-grep/` |
-| Unit | Ansible playbooks in `tests/` that inspect the plugin and run its login script against a stand-in EESSI, without root, CVMFS or network: `tests/run.sh` | `tests/` |
+| Unit | Ansible playbooks in `tests/` that inspect the plugin, run its login script against a stand-in EESSI, check parameter validation, and render the TESP config with hostile values; no root, CVMFS or network: `tests/run.sh` | `tests/` |
 | End to end | Nextflow against a tesp-api stack in CI ([#3](https://github.com/mirelaminkova/nextflow-tesp-src/issues/3)) | not yet |
 
 CI (`.github/workflows/ci.yml`) runs the same hooks and the unit tests, and needs no secrets. Hook and action versions are pinned to commit SHAs; the semgrep rule packs come from the semgrep registry at run time, so they can change without a commit here.

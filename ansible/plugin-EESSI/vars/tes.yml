@@ -1,0 +1,18 @@
+---
+# TESP connection settings, derived from the SRC component parameters
+# (README: "Connecting to TESP"). Unset and empty parameters are the same.
+nf_tes_endpoint: "{{ src_tes_endpoint | default('', true) | trim | regex_replace('/+$', '') }}"
+nf_tes_enabled: "{{ nf_tes_endpoint | length > 0 }}"
+nf_tes_username: "{{ src_tes_username | default('tes', true) }}"
+nf_tes_password: "{{ src_tes_password | default('', true) }}"
+nf_workdir: "{{ src_nf_workdir | default('', true) | trim }}"
+nf_s3_endpoint_url: "{{ src_s3_endpoint_url | default('', true) | trim }}"
+nf_s3_region: "{{ src_s3_region | default('us-east-1', true) | trim }}"
+nf_s3_access_key_id: "{{ src_s3_access_key_id | default('', true) }}"
+nf_s3_secret_access_key: "{{ src_s3_secret_access_key | default('', true) }}"
+nf_s3_addressing_style: "{{ src_s3_addressing_style | default('path', true) | trim }}"
+
+# nf-ga4gh 1.4.0 and later need Nextflow 25.10 or later.
+nf_ga4gh_version: "1.5.0"
+# Read by every user's ~/.nextflow/config through includeConfig.
+nf_tesp_config: /etc/nextflow/tesp.config

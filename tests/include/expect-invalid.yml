@@ -1,0 +1,26 @@
+---
+# Runs the parameter validation with one invalid set of parameters
+# (case.params) and fails unless the validation rejected it.
+- name: "Validate: {{ case.why }}"
+  block:
+    - name: Run parameter validation
+      ansible.builtin.include_tasks: "{{ plugin_dir }}/tasks/validate-parameters.yml"
+      vars:
+        src_tes_endpoint: "{{ case.params.src_tes_endpoint | default('') }}"
+        src_tes_username: "{{ case.params.src_tes_username | default('') }}"
+        src_tes_password: "{{ case.params.src_tes_password | default('') }}"
+        src_nf_workdir: "{{ case.params.src_nf_workdir | default('') }}"
+        src_s3_endpoint_url: "{{ case.params.src_s3_endpoint_url | default('') }}"
+        src_s3_region: "{{ case.params.src_s3_region | default('') }}"
+        src_s3_access_key_id: "{{ case.params.src_s3_access_key_id | default('') }}"
+        src_s3_secret_access_key: "{{ case.params.src_s3_secret_access_key | default('') }}"
+        src_s3_addressing_style: "{{ case.params.src_s3_addressing_style | default('') }}"
+
+    - name: The validation should have failed
+      ansible.builtin.fail:
+        msg: "accepted invalid parameters: {{ case.why }}"
+  rescue:
+    - name: Re-raise if invalid parameters were accepted
+      ansible.builtin.fail:
+        msg: "{{ ansible_failed_result.msg }}"
+      when: ansible_failed_result.msg is match('accepted invalid parameters')
