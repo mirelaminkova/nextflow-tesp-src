@@ -158,13 +158,13 @@ jobs:
       - name: check the tasks ran on TES
         # Without this, a config that silently fell back to the local executor would produce the same result.
         run: |
-          curl -fsS -u "$TES_USER:$TES_PASSWORD" "$TES_ENDPOINT/v1/tasks?view=MINIMAL" |
-            python3 -c '
+          curl -fsS -u "$TES_USER:$TES_PASSWORD" -o "$RUNNER_TEMP/tasks.json" "$TES_ENDPOINT/v1/tasks?view=MINIMAL"
+          python3 - "$RUNNER_TEMP/tasks.json" <<'PY'
           import json, sys
-          states = [t["state"] for t in json.load(sys.stdin).get("tasks", [])]
+          states = [t["state"] for t in json.load(open(sys.argv[1])).get("tasks", [])]
           print("TES task states:", states)
           sys.exit(0 if states.count("COMPLETE") >= 2 else "expected at least 2 COMPLETE TES tasks")
-          '
+          PY
 
       - name: negative check (wrong password)
         working-directory: tests/e2e
