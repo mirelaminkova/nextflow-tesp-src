@@ -68,6 +68,14 @@
           - profile_copy.mode == '0644'
           - profile_copy.owner == 'root' and profile_copy.group == 'root'
 
+    - name: The script's default system config is the one the playbook writes
+      ansible.builtin.assert:
+        that: >-
+          ': "${NEXTFLOW_TESP_CONFIG:=' ~ tes_vars.nf_tesp_config ~ '}"'
+          in lookup('ansible.builtin.file', profile_script)
+      vars:
+        tes_vars: "{{ lookup('ansible.builtin.file', plugin_dir ~ '/vars/tes.yml') | from_yaml }}"
+
     - name: Create scratch home
       ansible.builtin.tempfile:
         state: directory
@@ -89,7 +97,7 @@
               content: |
                 echo "EESSI banner"
                 module() { echo "module $*" >> "$HOME/module.log"; }
-            - dest: nextflow.config
+            - dest: tesp.config
               content: "// system config\n"
 
         - name: Create a home per scenario
@@ -104,8 +112,7 @@
             dest: "{{ scratch.path }}/profile.sh"
             content: >-
               {{ lookup('ansible.builtin.file', profile_script)
-                 | replace('/cvmfs/software.eessi.io/versions/2025.06/init/bash', scratch.path ~ '/init-bash')
-                 | replace('/etc/nextflow/tesp.config', scratch.path ~ '/nextflow.config') }}
+                 | replace('/cvmfs/software.eessi.io/versions/2025.06/init/bash', scratch.path ~ '/init-bash') }}
             mode: '0644'
 
         - name: Source it from a non-interactive shell
@@ -128,6 +135,7 @@
             argv: [bash, -c, 'PS1="$ "; . "$1"; echo "rc=$?"', bash, "{{ scratch.path }}/profile.sh"]
           environment:
             HOME: "{{ scratch.path }}/interactive"
+            NEXTFLOW_TESP_CONFIG: "{{ scratch.path }}/tesp.config"
           register: interactive
           changed_when: false
 
@@ -138,7 +146,7 @@
               - lookup('ansible.builtin.file', scratch.path ~ '/interactive/module.log') == 'module load Nextflow/26.04.0'
               - >-
                 lookup('ansible.builtin.file', scratch.path ~ '/interactive/.nextflow/config')
-                == "includeConfig '" ~ scratch.path ~ "/nextflow.config'"
+                == "includeConfig '" ~ scratch.path ~ "/tesp.config'"
             fail_msg: "{{ interactive | to_json }}"
 
         - name: Remove the stand-in EESSI init

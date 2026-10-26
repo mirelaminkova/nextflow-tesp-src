@@ -1,6 +1,7 @@
 ---
 # Runs the parameter validation with one invalid set of parameters
-# (case.params) and fails unless the validation rejected it.
+# (case.params) and fails unless the check for case.expect rejected it: any
+# other failure (another check, a typo, an undefined variable) fails the test.
 - name: "Validate: {{ case.why }}"
   block:
     - name: Run parameter validation
@@ -20,7 +21,8 @@
       ansible.builtin.fail:
         msg: "accepted invalid parameters: {{ case.why }}"
   rescue:
-    - name: Re-raise if invalid parameters were accepted
-      ansible.builtin.fail:
-        msg: "{{ ansible_failed_result.msg }}"
-      when: ansible_failed_result.msg is match('accepted invalid parameters')
+    - name: "Rejected by the check for {{ case.expect }}"
+      ansible.builtin.assert:
+        that: ansible_failed_result.msg | default('') is search(case.expect)
+        fail_msg: "expected a {{ case.expect }} error, got: {{ ansible_failed_result.msg | default(ansible_failed_result) }}"
+        quiet: true

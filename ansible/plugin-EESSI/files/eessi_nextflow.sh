@@ -8,12 +8,15 @@
 
 # Point each user's Nextflow config at the TESP settings the playbook writes,
 # so re-running the playbook (new endpoint or password) reaches every user.
-# Only a missing config is created; a user's own config is left alone.
-# Nextflow reads $NXF_HOME/config (default ~/.nextflow/config), and needs that
-# directory writable anyway: it downloads plugins there.
+# A missing config is created, and so is a full copy left by earlier versions
+# of this script (recognised by its first line); any other config is the
+# user's own and is left alone. Nextflow reads $NXF_HOME/config (default
+# ~/.nextflow/config) and needs that directory writable anyway: it downloads
+# plugins there.
 : "${NEXTFLOW_TESP_CONFIG:=/etc/nextflow/tesp.config}"
 nxf_user_config="${NXF_HOME:-$HOME/.nextflow}/config"
-if [ ! -e "$nxf_user_config" ] && [ -r "$NEXTFLOW_TESP_CONFIG" ]; then
+if [ -r "$NEXTFLOW_TESP_CONFIG" ] && { [ ! -e "$nxf_user_config" ] ||
+    [ "$(head -n 1 "$nxf_user_config" 2>/dev/null)" = '// Managed by Ansible (nextflow-tesp-src). GA4GH TES -> Pulsar via TESP-API.' ]; }; then
     mkdir -p "${nxf_user_config%/config}" &&
         printf "includeConfig '%s'\n" "$NEXTFLOW_TESP_CONFIG" > "$nxf_user_config"
 fi
