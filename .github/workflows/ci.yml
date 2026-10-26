@@ -2,8 +2,8 @@
 name: ci
 
 # Needs no repository secrets. Job names (lint, unit) are stable so branch
-# protection can require them. The end-to-end job against a tesp-api stack is
-# tracked in #3.
+# protection can require them. The end-to-end test against a tesp-api stack is
+# e2e.yml.
 
 on:
   pull_request:
