@@ -1,13 +1,14 @@
 ---
-# Install both stages once per clone:
-#   pre-commit install --hook-type pre-commit --hook-type pre-push
+# `pre-commit install` sets up both the commit and the push stage.
+# ansible-core is pinned here twice and in .github/workflows/ci.yml; keep them
+# the same.
 default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-commit]
 default_language_version:
   python: python3
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
     hooks:
       - id: check-yaml
       - id: end-of-file-fixer
@@ -15,16 +16,16 @@ repos:
       - id: check-merge-conflict
       - id: detect-private-key
   - repo: https://github.com/adrienverge/yamllint
-    rev: v1.38.0
+    rev: cba56bcde1fdd01c1deb3f945e69764c291a6530  # frozen: v1.38.0
     hooks:
       - id: yamllint
         args: [--strict]
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.11.0.1
+    rev: a6564f5d57444e123433a5c9af733e3975c77229  # frozen: v0.11.0.1-1
     hooks:
       - id: shellcheck
   - repo: https://github.com/ansible/ansible-lint
-    rev: v26.10.1
+    rev: 9bce2bfb8f4a984e6b13767bc0d6bf0a49492164  # frozen: v26.10.1
     hooks:
       - id: ansible-lint
         # The hook asks for python3.14 by default.

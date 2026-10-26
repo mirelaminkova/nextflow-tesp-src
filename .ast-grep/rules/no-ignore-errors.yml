@@ -7,6 +7,7 @@ message: >-
   exact condition that is acceptable.
 rule:
   kind: block_mapping_pair
-  has:
-    field: key
-    regex: '^ignore_errors$'
+  all:
+    - has: {field: key, regex: '^ignore_errors$'}
+    - not:
+        has: {field: value, regex: '^(false|no|False)$'}

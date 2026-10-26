@@ -33,7 +33,7 @@ jobs:
           python-version: "3.12"
 
       - name: install pre-commit
-        run: pip install "pre-commit>=4,<5"
+        run: pip install "pre-commit==4.7.0"
 
       - name: cache pre-commit environments
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -41,7 +41,10 @@ jobs:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      - name: commit-stage hooks (linters, syntax check, unit tests)
+      - name: commit-stage hooks (linters, syntax check)
+        # The unit job runs the unit tests.
+        env:
+          SKIP: unit-tests
         run: pre-commit run --all-files --show-diff-on-failure
 
       - name: push-stage hooks (ast-grep, semgrep)
@@ -61,6 +64,7 @@ jobs:
           python-version: "3.12"
 
       - name: install ansible-core
+        # Same version as the local hooks in .pre-commit-config.yaml.
         run: pip install "ansible-core==2.21.5"
 
       - name: run unit tests
