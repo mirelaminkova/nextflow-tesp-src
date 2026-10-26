@@ -1,0 +1,23 @@
+---
+# TESP connection settings, derived from the SRC component parameters
+# (README: "Connecting to TESP"). Values are trimmed first, so a blank
+# parameter counts as unset; the src_s3_* rules match TESP-src's.
+nf_tes_endpoint: >-
+  {{ src_tes_endpoint | default('') | trim | regex_replace('/+$', '') }}
+nf_tes_enabled: "{{ nf_tes_endpoint | length > 0 }}"
+nf_tes_username: "{{ src_tes_username | default('') | trim | default('tes', true) }}"
+nf_tes_password: "{{ src_tes_password | default('') | trim }}"
+nf_workdir: "{{ src_nf_workdir | default('') | trim }}"
+nf_s3_endpoint_url: "{{ src_s3_endpoint_url | default('') | trim }}"
+nf_s3_region: "{{ src_s3_region | default('') | trim | default('us-east-1', true) }}"
+nf_s3_access_key_id: "{{ src_s3_access_key_id | default('') | trim }}"
+nf_s3_secret_access_key: "{{ src_s3_secret_access_key | default('') | trim }}"
+nf_s3_addressing_style: >-
+  {{ src_s3_addressing_style | default('') | trim | default('path', true) }}
+
+# nf-ga4gh 1.4.0 and later need Nextflow 25.10 or later. 1.5.0 is the version
+# the e2e test (tests/e2e) runs on TESP with Nextflow 26.04.0.
+nf_ga4gh_version: "1.5.0"
+# Read by every user's Nextflow config through includeConfig. The login
+# script (files/eessi_nextflow.sh) has the same default path.
+nf_tesp_config: /etc/nextflow/tesp.config

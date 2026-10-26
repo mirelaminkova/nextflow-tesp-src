@@ -1,0 +1,326 @@
+# Checks the TESP connection settings without root or network: parameter
+# validation, the rendered Nextflow config, and the per-user config seeding.
+# The rendered config is read back with a regex that inverts the template's
+# escaping; the e2e job (tests/e2e) has Nextflow itself parse a hostile
+# password from it and send it to tesp-api.
+#
+#   ansible-playbook -i localhost, -c local tests/tes-config.yml
+#
+# Rendered files go to a temporary directory that is removed afterwards.
+---
+- name: Check the TESP connection settings
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../ansible/plugin-EESSI/vars/tes.yml
+  vars:
+    plugin_dir: "{{ playbook_dir }}/../ansible/plugin-EESSI"
+    # Test values only. The password and keys hold characters that need
+    # escaping in a Groovy string, and things that look like interpolation.
+    src_tes_endpoint: https://tesp.example.src.surf-hosted.nl/tes/
+    src_tes_username: tes
+    src_tes_password: "pa'ss\\w+/=${x}\"K9xw"
+    src_nf_workdir: s3://nf-bucket/work
+    src_s3_endpoint_url: https://objectstore.example.org
+    src_s3_region: eu-west-1
+    src_s3_access_key_id: test-access-Qe3r
+    src_s3_secret_access_key: "test-secret/Jw8+'\\Zp4m"
+    src_s3_addressing_style: path
+    # key = 'value' pairs in the rendered config; values still escaped.
+    # key = '...' pairs, values still escaped, e.g. basicPassword = 'pa\'ss'.
+    # Written as a block scalar so that no YAML quoting is involved.
+    groovy_string_re: >-
+      (\w+)\s*=\s*'((?:[^'\\]|\\.)*)'
+    # Groovy escapes used by the template: \\ and \'.
+    groovy_escape_re: '\\(.)'
+    groovy_escape_repl: '\1'
+  tasks:
+    - name: Valid parameters pass validation
+      ansible.builtin.include_tasks: "{{ plugin_dir }}/tasks/validate-parameters.yml"
+
+    - name: No TES endpoint means TES stays off, and nothing else is required
+      ansible.builtin.include_tasks: "{{ plugin_dir }}/tasks/validate-parameters.yml"
+      vars:
+        src_tes_endpoint: ""
+        src_tes_password: ""
+        src_nf_workdir: ""
+        src_s3_access_key_id: ""
+        src_s3_secret_access_key: ""
+
+    - name: Invalid parameters are rejected
+      ansible.builtin.include_tasks: include/expect-invalid.yml
+      vars:
+        # Valid TES parameters that the cases below add one bad value to.
+        valid_tes: &valid_tes {src_tes_endpoint: https://tesp.example.org/tes, src_tes_password: x, src_nf_workdir: s3://nf-bucket/w}
+      loop_control:
+        loop_var: case
+        label: "{{ case.why }}"
+      loop:
+        - why: endpoint without a scheme
+          expect: src_tes_endpoint
+          params: {src_tes_endpoint: tesp.example.org/tes, src_tes_password: x, src_nf_workdir: s3://nf-bucket/w}
+        - why: endpoint with a quote
+          expect: src_tes_endpoint
+          params: {src_tes_endpoint: "https://tesp.example.org/tes'", src_tes_password: x, src_nf_workdir: s3://nf-bucket/w}
+        - why: endpoint with credentials in the URL
+          expect: src_tes_endpoint
+          params: {src_tes_endpoint: "https://u:p@tesp.example.org/tes", src_tes_password: x, src_nf_workdir: s3://nf-bucket/w}
+        - why: plain http to another host
+          expect: src_tes_endpoint
+          params: {src_tes_endpoint: http://tesp.example.org/tes, src_tes_password: x, src_nf_workdir: s3://nf-bucket/w}
+        - why: port above 65535
+          expect: src_tes_endpoint
+          params: {src_tes_endpoint: "https://tesp.example.org:99999/tes", src_tes_password: x, src_nf_workdir: s3://nf-bucket/w}
+        - why: username with a newline inside
+          expect: src_tes_username
+          params: {<<: *valid_tes, src_tes_username: "tes\nx"}
+        - why: username with a quote
+          expect: src_tes_username
+          params: {<<: *valid_tes, src_tes_username: "te's"}
+        - why: TES without a password
+          expect: src_tes_password
+          params: {src_tes_endpoint: https://tesp.example.org/tes, src_nf_workdir: s3://nf-bucket/w}
+        - why: password with a newline
+          expect: src_tes_password
+          params: {src_tes_endpoint: https://tesp.example.org/tes, src_tes_password: "a\nb", src_nf_workdir: s3://nf-bucket/w}
+        - why: TES without a work dir
+          expect: src_nf_workdir
+          params: {src_tes_endpoint: https://tesp.example.org/tes, src_tes_password: x}
+        - why: local work dir
+          expect: src_nf_workdir
+          params: {src_tes_endpoint: https://tesp.example.org/tes, src_tes_password: x, src_nf_workdir: /home/me/work}
+        - why: work dir bucket with upper case
+          expect: src_nf_workdir
+          params: {src_tes_endpoint: https://tesp.example.org/tes, src_tes_password: x, src_nf_workdir: s3://Bucket/work}
+        - why: work dir at the bucket root
+          expect: src_nf_workdir
+          params: {src_tes_endpoint: https://tesp.example.org/tes, src_tes_password: x, src_nf_workdir: s3://nf-bucket}
+        - why: work dir with a trailing newline
+          expect: src_nf_workdir
+          params: {src_tes_endpoint: https://tesp.example.org/tes, src_tes_password: x, src_nf_workdir: "s3://nf-bucket/w\nx"}
+        - why: S3 endpoint without a scheme
+          expect: src_s3_endpoint_url
+          params: {<<: *valid_tes, src_s3_endpoint_url: objectstore.example.org}
+        - why: S3 endpoint with a quote
+          expect: src_s3_endpoint_url
+          params: {<<: *valid_tes, src_s3_endpoint_url: "https://objectstore.example.org'"}
+        - why: S3 endpoint with credentials
+          expect: src_s3_endpoint_url
+          params: {<<: *valid_tes, src_s3_endpoint_url: "https://k:s@objectstore.example.org"}
+        - why: region with a quote
+          expect: src_s3_region
+          params: {<<: *valid_tes, src_s3_region: "eu'"}
+        - why: unknown addressing style
+          expect: src_s3_addressing_style
+          params: {<<: *valid_tes, src_s3_addressing_style: dns}
+        - why: only the access key
+          expect: src_s3_access_key_id
+          params: {<<: *valid_tes, src_s3_access_key_id: k}
+        - why: only the secret key
+          expect: src_s3_access_key_id
+          params: {<<: *valid_tes, src_s3_secret_access_key: s}
+        - why: secret key with a newline inside
+          expect: src_s3_access_key_id
+          params: {<<: *valid_tes, src_s3_access_key_id: k, src_s3_secret_access_key: "s\nt"}
+        - why: S3 checks run with TES off too
+          expect: src_s3_region
+          params: {src_s3_region: "eu'"}
+
+    - name: Create output directory
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: nf-tesp
+      register: out
+
+    - name: Render, check, clean up
+      block:
+        - name: Render the config with TES on
+          ansible.builtin.template:
+            src: "{{ plugin_dir }}/templates/tesp.config.j2"
+            dest: "{{ out.path }}/tesp.config"
+            mode: '0600'
+
+        - name: Render the config with TES off
+          ansible.builtin.template:
+            src: "{{ plugin_dir }}/templates/tesp.config.j2"
+            dest: "{{ out.path }}/off.config"
+            mode: '0600'
+          vars:
+            src_tes_endpoint: ""
+
+        - name: Read rendered configs
+          ansible.builtin.set_fact:
+            tes_on: "{{ lookup('ansible.builtin.file', out.path ~ '/tesp.config') }}"
+            tes_off: "{{ lookup('ansible.builtin.file', out.path ~ '/off.config') }}"
+
+        - name: Every string value unescapes to exactly the parameter
+          ansible.builtin.assert:
+            that:
+              - endpoints == ['https://tesp.example.src.surf-hosted.nl/tes', src_s3_endpoint_url]
+              - values.basicUsername == src_tes_username
+              - values.basicPassword == src_tes_password
+              - values.workDir == src_nf_workdir
+              - values.executor == 'tes'
+              - values.region == src_s3_region
+              - values.accessKey == src_s3_access_key_id
+              - values.secretKey == src_s3_secret_access_key
+            fail_msg: "{{ values | to_json }}"
+          vars:
+            pairs: "{{ tes_on | regex_findall(groovy_string_re) }}"
+            unescaped: >-
+              {{ pairs | map('last') | map('regex_replace', groovy_escape_re, groovy_escape_repl) | list }}
+            # `endpoint` appears twice (tes, aws.client); the dict keeps the last.
+            values: "{{ dict(pairs | map('first') | zip(unescaped)) }}"
+            endpoints: "{{ tes_on | regex_findall(\"endpoint\\s*=\\s*'([^']*)'\") }}"
+
+        - name: Nothing outside string literals came from a parameter
+          ansible.builtin.assert:
+            that:
+              - stripped is not search('\\$\\{')
+              - stripped is not search('Jw8|K9xw|Qe3r')
+            fail_msg: "{{ stripped }}"
+          vars:
+            stripped: "{{ tes_on | regex_replace(groovy_string_re, '') }}"
+
+        - name: The plugin is pinned and path-style S3 is set
+          ansible.builtin.assert:
+            that:
+              - "\"id 'nf-ga4gh@\" ~ nf_ga4gh_version ~ \"'\" in tes_on"
+              - tes_on is search('s3PathStyleAccess\\s*=\\s*true')
+
+        - name: With TES off the config sets nothing
+          ansible.builtin.assert:
+            that:
+              - tes_off | regex_replace('(?m)^\\s*//.*$', '') | trim == ''
+            fail_msg: "{{ tes_off }}"
+
+        - name: The deploy task for the config hides its values and limits access
+          ansible.builtin.assert:
+            that:
+              - deploy.no_log | default(false)
+              - "'nf_tesp_config' in deploy['ansible.builtin.template'].dest"
+              - deploy['ansible.builtin.template'].mode == '0644'
+          vars:
+            plays: "{{ lookup('ansible.builtin.file', plugin_dir ~ '/plugin-EESSI-client.yml') | from_yaml }}"
+            deploy: >-
+              {{ plays | map(attribute='tasks') | flatten
+                 | selectattr('name', 'equalto', 'Deploy the Nextflow TESP config') | first | default({}) }}
+      always:
+        - name: Remove output directory
+          ansible.builtin.file:
+            path: "{{ out.path }}"
+            state: absent
+
+- name: Check per-user config seeding
+  hosts: localhost
+  gather_facts: false
+  vars:
+    profile_script: "{{ playbook_dir }}/../ansible/plugin-EESSI/files/eessi_nextflow.sh"
+  tasks:
+    - name: Create scratch home and system config
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: nf-seed
+      register: scratch
+
+    - name: Seed, check, clean up
+      block:
+        - name: Create a stand-in system config
+          ansible.builtin.copy:
+            dest: "{{ scratch.path }}/tesp.config"
+            content: "// system\n"
+            mode: '0644'
+
+        - name: Log in twice from a non-interactive shell
+          ansible.builtin.command:
+            argv: [bash, -c, '. "$1"; . "$1"', bash, "{{ profile_script }}"]
+          environment:
+            HOME: "{{ scratch.path }}/home"
+            NEXTFLOW_TESP_CONFIG: "{{ scratch.path }}/tesp.config"
+          changed_when: false
+
+        - name: The user config includes the system config once
+          ansible.builtin.assert:
+            that: >-
+              lookup('ansible.builtin.file', scratch.path ~ '/home/.nextflow/config')
+              == "includeConfig '" ~ scratch.path ~ "/tesp.config'"
+
+        - name: Replace the user config with one of the user's own
+          ansible.builtin.copy:
+            dest: "{{ scratch.path }}/home/.nextflow/config"
+            content: "process.executor = 'local'\n"
+            mode: '0600'
+
+        - name: Log in again
+          ansible.builtin.command:
+            argv: [bash, -c, '. "$1"', bash, "{{ profile_script }}"]
+          environment:
+            HOME: "{{ scratch.path }}/home"
+            NEXTFLOW_TESP_CONFIG: "{{ scratch.path }}/tesp.config"
+          changed_when: false
+
+        - name: The user's own config is left alone
+          ansible.builtin.assert:
+            that: >-
+              lookup('ansible.builtin.file', scratch.path ~ '/home/.nextflow/config')
+              == "process.executor = 'local'"
+        - name: Put back a full copy left by an earlier version of the script
+          ansible.builtin.copy:
+            dest: "{{ scratch.path }}/home/.nextflow/config"
+            content: |
+              // Managed by Ansible (nextflow-tesp-src). GA4GH TES -> Pulsar via TESP-API.
+              aws { accessKey = 'the-users-own-key' }
+            mode: '0644'
+
+        - name: Log in after the upgrade
+          ansible.builtin.command:
+            argv: [bash, -c, '. "$1"', bash, "{{ profile_script }}"]
+          environment:
+            HOME: "{{ scratch.path }}/home"
+            NEXTFLOW_TESP_CONFIG: "{{ scratch.path }}/tesp.config"
+          changed_when: false
+
+        - name: The old copy is replaced by the include, and kept with the user's edits
+          ansible.builtin.assert:
+            that:
+              - >-
+                lookup('ansible.builtin.file', scratch.path ~ '/home/.nextflow/config')
+                == "includeConfig '" ~ scratch.path ~ "/tesp.config'"
+              - >-
+                'the-users-own-key'
+                in lookup('ansible.builtin.file', scratch.path ~ '/home/.nextflow/config.pre-tesp')
+
+        - name: Log in with a config directory that can't be written, under set -eu
+          ansible.builtin.command:
+            argv: [bash, -c, 'set -eu; PS1=; . "$1"; echo "rc=$?"', bash, "{{ profile_script }}"]
+          environment:
+            HOME: "{{ scratch.path }}/home"
+            NXF_HOME: /proc/nxf-home
+            NEXTFLOW_TESP_CONFIG: "{{ scratch.path }}/tesp.config"
+          register: readonly_login
+          changed_when: false
+
+        - name: The login goes on quietly
+          ansible.builtin.assert:
+            that: readonly_login.stdout == 'rc=0' and readonly_login.stderr == ''
+            fail_msg: "{{ readonly_login | to_json }}"
+
+        - name: Log in with NXF_HOME set
+          ansible.builtin.command:
+            argv: [bash, -c, '. "$1"', bash, "{{ profile_script }}"]
+          environment:
+            HOME: "{{ scratch.path }}/home"
+            NXF_HOME: "{{ scratch.path }}/nxf-home"
+            NEXTFLOW_TESP_CONFIG: "{{ scratch.path }}/tesp.config"
+          changed_when: false
+
+        - name: The config is seeded where Nextflow reads it, $NXF_HOME/config
+          ansible.builtin.assert:
+            that: >-
+              lookup('ansible.builtin.file', scratch.path ~ '/nxf-home/config')
+              == "includeConfig '" ~ scratch.path ~ "/tesp.config'"
+      always:
+        - name: Remove scratch directory
+          ansible.builtin.file:
+            path: "{{ scratch.path }}"
+            state: absent

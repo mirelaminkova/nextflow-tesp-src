@@ -2,7 +2,12 @@
 - name: Configure node for access to the EESSI stack
   hosts: localhost
   gather_facts: true
+  vars_files:
+    - vars/tes.yml
   tasks:
+    - name: Validate the component parameters before installing anything
+      ansible.builtin.include_tasks: tasks/validate-parameters.yml
+
     - name: Install prerequisites
       ansible.builtin.apt:
         name:
@@ -66,6 +71,8 @@
   hosts: localhost
   become: true
   gather_facts: true
+  vars_files:
+    - vars/tes.yml
   tasks:
     - name: Install the login script that loads Nextflow from EESSI
       ansible.builtin.copy:
@@ -81,40 +88,20 @@
         state: directory
         mode: '0755'
 
-    - name: Deploy Nextflow TES (TESP-API / Pulsar) connection config
-      # Connects the Nextflow client to a GA4GH TES endpoint (TESP-API in front
-      # of Pulsar). Values come from SRC plugin parameters; keep the password in
-      # a secret parameter. Readable (0644) so it can be seeded into each user's
-      # ~/.nextflow/config -- on a multi-tenant node, prefer templating straight
-      # into the workspace user's home at 0600 instead.
+    - name: Deploy the Nextflow TESP config
+      # Holds the TES password and S3 key pair. World-readable because every
+      # user's ~/.nextflow/config includes it: everyone who can log in to this
+      # workspace is a member of the CO, the same people who can open the TESP
+      # welcome page that shows these credentials.
       no_log: true
-      ansible.builtin.copy:
-        dest: /etc/nextflow/nextflow.config
+      ansible.builtin.template:
+        src: templates/tesp.config.j2
+        dest: "{{ nf_tesp_config }}"
         mode: '0644'
-        content: |
-          // Managed by Ansible (nextflow-tesp-src). GA4GH TES -> Pulsar via TESP-API.
-          //
-          // To make TES opt-in rather than the default executor, move the
-          // `process`/`tes` blocks into `profiles { tes { ... } }` and launch
-          // pipelines with `-profile tes`.
-          //
-          // IMPORTANT: the TES executor stages task inputs/outputs by URL, so the
-          // Nextflow work directory must live on object storage (e.g. S3/MinIO),
-          // not a local path. Launch with an object-store work dir, e.g.:
-          //     nextflow run <pipeline> -w s3://<bucket>/work
-          // and provide the matching credentials (e.g. an `aws { ... }` block).
-          // A local `-w ./work` will be rejected by TESP-API with
-          // "invalid or missing URL scheme".
-          plugins {
-              id 'nf-ga4gh'
-          }
+        owner: root
+        group: root
 
-          process {
-              executor = 'tes'
-          }
-
-          tes {
-              endpoint      = '{{ src_tes_endpoint | default("http://localhost:8080") }}'
-              basicUsername = '{{ src_tes_username | default("") }}'
-              basicPassword = '{{ src_tes_password | default("") }}'
-          }
+    - name: Remove the config file written by earlier versions
+      ansible.builtin.file:
+        path: /etc/nextflow/nextflow.config
+        state: absent

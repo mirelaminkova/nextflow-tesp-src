@@ -1,0 +1,48 @@
+{#- Groovy single-quoted string: no interpolation; escape \ and '. -#}
+{%- macro q(value) -%}
+'{{ value | string | replace('\\', '\\\\') | replace("'", "\\'") }}'
+{%- endmacro -%}
+// {{ ansible_managed | default('Managed by Ansible') }} (nextflow-tesp-src).
+// Re-running the playbook overwrites this file. Each user's ~/.nextflow/config
+// includes it; put your own settings there or in a pipeline's nextflow.config.
+{% if nf_tes_enabled | bool %}
+//
+// Tasks run on the TESP workspace {{ nf_tes_endpoint | regex_replace('^https?://([^/:]+).*$', '\\1') }}.
+// Every process needs a container image, and outputs can't use glob patterns
+// (https://github.com/mirelaminkova/tesp-api/issues/29).
+
+plugins {
+    id {{ q('nf-ga4gh@' ~ nf_ga4gh_version) }}
+}
+
+// TESP stages task files by URL, so the work directory must be on S3.
+workDir = {{ q(nf_workdir) }}
+
+process {
+    executor = {{ q('tes') }}
+}
+
+tes {
+    endpoint = {{ q(nf_tes_endpoint) }}
+    basicUsername = {{ q(nf_tes_username) }}
+    basicPassword = {{ q(nf_tes_password) }}
+}
+
+aws {
+    region = {{ q(nf_s3_region) }}
+{% if nf_s3_access_key_id %}
+    accessKey = {{ q(nf_s3_access_key_id) }}
+    secretKey = {{ q(nf_s3_secret_access_key) }}
+{% endif %}
+    client {
+{% if nf_s3_endpoint_url %}
+        endpoint = {{ q(nf_s3_endpoint_url) }}
+{% endif %}
+{% if nf_s3_addressing_style != 'auto' %}
+        s3PathStyleAccess = {{ (nf_s3_addressing_style == 'path') | lower }}
+{% endif %}
+    }
+}
+{% else %}
+// TES is off: src_tes_endpoint is not set, so Nextflow uses its defaults.
+{% endif %}

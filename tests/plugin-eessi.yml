@@ -24,10 +24,16 @@
     template_args: >-
       {{ plugin_modules | selectattr('key', 'in', ['template', 'ansible.builtin.template'])
          | map(attribute='value') | list }}
-    # src of every copy/template task, relative to the plugin directory.
+    include_args: >-
+      {{ plugin_modules | selectattr('key', 'in', ['include_tasks', 'ansible.builtin.include_tasks'])
+         | map(attribute='value') | list }}
+    # Every file the playbook uses, relative to the plugin directory.
     plugin_sources: >-
-      {{ (copy_args + template_args) | selectattr('src', 'defined')
-         | map(attribute='src') | list }}
+      {{ ((copy_args + template_args) | selectattr('src', 'defined')
+          | map(attribute='src') | list
+          + include_args
+          + plugin_plays | selectattr('vars_files', 'defined')
+            | map(attribute='vars_files') | flatten) | unique }}
     profile_copy: >-
       {{ copy_args | selectattr('dest', 'defined')
          | selectattr('dest', 'equalto', '/etc/profile.d/eessi_nextflow.sh')
@@ -36,7 +42,7 @@
   tasks:
     - name: List files shipped with the plugin
       ansible.builtin.find:
-        paths: "{{ plugin_dir }}/files"
+        paths: "{{ ['files', 'templates', 'tasks', 'vars'] | map('regex_replace', '^', plugin_dir ~ '/') | list }}"
         recurse: true
       register: shipped
 
@@ -62,6 +68,14 @@
           - profile_copy.mode == '0644'
           - profile_copy.owner == 'root' and profile_copy.group == 'root'
 
+    - name: The script's default system config is the one the playbook writes
+      ansible.builtin.assert:
+        that: >-
+          ': "${NEXTFLOW_TESP_CONFIG:=' ~ tes_vars.nf_tesp_config ~ '}"'
+          in lookup('ansible.builtin.file', profile_script)
+      vars:
+        tes_vars: "{{ lookup('ansible.builtin.file', plugin_dir ~ '/vars/tes.yml') | from_yaml }}"
+
     - name: Create scratch home
       ansible.builtin.tempfile:
         state: directory
@@ -83,7 +97,7 @@
               content: |
                 echo "EESSI banner"
                 module() { echo "module $*" >> "$HOME/module.log"; }
-            - dest: nextflow.config
+            - dest: tesp.config
               content: "// system config\n"
 
         - name: Create a home per scenario
@@ -98,8 +112,7 @@
             dest: "{{ scratch.path }}/profile.sh"
             content: >-
               {{ lookup('ansible.builtin.file', profile_script)
-                 | replace('/cvmfs/software.eessi.io/versions/2025.06/init/bash', scratch.path ~ '/init-bash')
-                 | replace('/etc/nextflow/nextflow.config', scratch.path ~ '/nextflow.config') }}
+                 | replace('/cvmfs/software.eessi.io/versions/2025.06/init/bash', scratch.path ~ '/init-bash') }}
             mode: '0644'
 
         - name: Source it from a non-interactive shell
@@ -122,6 +135,7 @@
             argv: [bash, -c, 'PS1="$ "; . "$1"; echo "rc=$?"', bash, "{{ scratch.path }}/profile.sh"]
           environment:
             HOME: "{{ scratch.path }}/interactive"
+            NEXTFLOW_TESP_CONFIG: "{{ scratch.path }}/tesp.config"
           register: interactive
           changed_when: false
 
@@ -130,7 +144,9 @@
             that:
               - interactive.stdout_lines == ['EESSI banner', 'rc=0'] and interactive.stderr == ''
               - lookup('ansible.builtin.file', scratch.path ~ '/interactive/module.log') == 'module load Nextflow/26.04.0'
-              - lookup('ansible.builtin.file', scratch.path ~ '/interactive/.nextflow/config') == '// system config'
+              - >-
+                lookup('ansible.builtin.file', scratch.path ~ '/interactive/.nextflow/config')
+                == "includeConfig '" ~ scratch.path ~ "/tesp.config'"
             fail_msg: "{{ interactive | to_json }}"
 
         - name: Remove the stand-in EESSI init
