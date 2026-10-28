@@ -8,6 +8,9 @@
     - name: Validate the component parameters before installing anything
       ansible.builtin.include_tasks: tasks/validate-parameters.yml
 
+    - name: Check the S3 key pair against src_nf_workdir before installing anything
+      ansible.builtin.include_tasks: tasks/check-s3-access.yml
+
     - name: Install prerequisites
       ansible.builtin.apt:
         name:

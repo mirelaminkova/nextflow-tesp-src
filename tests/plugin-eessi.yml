@@ -27,10 +27,22 @@
     include_args: >-
       {{ plugin_modules | selectattr('key', 'in', ['include_tasks', 'ansible.builtin.include_tasks'])
          | map(attribute='value') | list }}
+    # Scripts run by the included task files; their cmd is relative to tasks/.
+    included_tasks: >-
+      {{ query('ansible.builtin.file', *(include_args | map('regex_replace', '^', plugin_dir ~ '/')))
+         | map('from_yaml') | flatten }}
+    included_tasks_all: >-
+      {{ included_tasks + (included_tasks | selectattr('block', 'defined')
+                           | map(attribute='block') | flatten) }}
+    script_args: >-
+      {{ included_tasks_all | map('dict2items') | flatten
+         | selectattr('key', 'in', ['script', 'ansible.builtin.script'])
+         | map(attribute='value') | list }}
     # Every file the playbook uses, relative to the plugin directory.
     plugin_sources: >-
       {{ ((copy_args + template_args) | selectattr('src', 'defined')
           | map(attribute='src') | list
+          + script_args | map(attribute='cmd') | map('regex_replace', '^[.][.]/', '') | list
           + include_args
           + plugin_plays | selectattr('vars_files', 'defined')
             | map(attribute='vars_files') | flatten) | unique }}
