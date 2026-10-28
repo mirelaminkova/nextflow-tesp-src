@@ -80,9 +80,17 @@ pre-commit run --all-files --hook-stage pre-push
 | --- | --- | --- |
 | Static | yamllint, ansible-lint (production profile), `ansible-playbook --syntax-check`, shellcheck | `.pre-commit-config.yaml`, `.yamllint`, `.ansible-lint` |
 | Static, on push | ast-grep rules (no `ignore_errors`; `no_log` on tasks that use password or secret variables) with their own tests; semgrep `p/github-actions` and `p/secrets` | `sgconfig.yml`, `.ast-grep/` |
-| Unit | Ansible playbooks in `tests/` that inspect the plugin, run its login script against a stand-in EESSI, check parameter validation, and render the TESP config with hostile values; no root, CVMFS or network: `tests/run.sh` | `tests/` |
+| Unit | Ansible playbooks in `tests/` that inspect the plugin, run its login script against a stand-in EESSI, check parameter validation, render the TESP config with hostile values, and check that workflow actions are pinned and that the review workflow keeps its limits (`tests/workflows.yml`); no root, CVMFS or network: `tests/run.sh` | `tests/` |
 | End to end | CI only (needs Docker): tesp-api at the commit TESP-src pins, with Pulsar and MinIO, basic auth, and nginx at `/tes/`. The job renders this repo's config template, seeds it with the login script, and runs a two-process pipeline with Nextflow 26.04.0 on Java 25 against an `s3://` work dir. It checks the result and that both tasks reached COMPLETE on TES, then checks that a wrong password fails with 401 | `.github/workflows/e2e.yml`, `tests/e2e/` |
 
 CI (`.github/workflows/ci.yml`, `e2e.yml`) runs the same hooks, the unit tests and the end-to-end test, and needs no secrets. Hook and action versions are pinned to commit SHAs; the semgrep rule packs come from the semgrep registry at run time, so they can change without a commit here.
+
+### Automated review
+
+`.github/workflows/claude-review.yml` has Claude ([claude-code-action](https://github.com/anthropics/claude-code-action)) review a PR when it is opened, reopened or marked ready for review, and skips drafts and PRs from forks. It posts inline threads from an adversarial and a quality angle; answer each thread with a fix or a reasoned reply, then resolve it. A review that finds nothing posts nothing; a green `claude-review` run with no threads means it found nothing.
+
+To turn it on, a maintainer adds one repository secret: `ANTHROPIC_API_KEY` (billed per review; use a key with a spending limit), or `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` (uses a Claude subscription). Without either, the job skips with a notice. To review a PR again, mark it as draft and then ready again; each run is a full, paid review.
+
+What Claude can do: read the checkout and the PR diff (written to `pr.diff` by the job) and post inline comments. It has no shell, no `gh` and no web access; `.git` (where the action stores the job token), `/proc`, `/tmp` and the runner's own directories are denied, and settings or MCP servers in the PR's `.claude/` are not loaded. So PR comments, which anyone can write on this public repository, never reach it, and a comment body is its only output. The job's `GITHUB_TOKEN` can read the code and write to PRs. The diff and files are still model input: someone who can push a branch can steer what the review says, and can change the workflow on their own PR. `tests/workflows.yml` checks these limits against regressions.
 
 Tasks that use password or secret variables carry `no_log: true`, which also hides their error messages. To debug a failing one, set `no_log: false` on that task temporarily, on a workspace whose credentials you may print.

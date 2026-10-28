@@ -1,0 +1,186 @@
+---
+# Checks the GitHub Actions workflows without network: every action is pinned
+# to a commit SHA, no workflow hands secrets to fork code, and the Claude
+# review workflow (issue #11) keeps the limits the README promises.
+#
+#   ansible-playbook -i localhost, -c local tests/workflows.yml
+- name: Check the GitHub Actions workflows
+  hosts: localhost
+  gather_facts: false
+  vars:
+    workflow_dir: "{{ playbook_dir }}/../.github/workflows"
+    review_text: "{{ lookup('ansible.builtin.file', workflow_dir ~ '/claude-review.yml') }}"
+    review: "{{ review_text | from_yaml }}"
+    # YAML 1.1 reads the key `on` as true.
+    review_on: >-
+      {{ (review | dict2items | selectattr('key', 'in', [true, 'on']) | first).value }}
+    review_jobs: "{{ review.jobs | dict2items | map(attribute='value') | list }}"
+    review_steps: "{{ review_jobs | map(attribute='steps') | flatten }}"
+    checkout_action: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    claude_action: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc
+    # The job's only commands: the skip notice and the diff Claude reads.
+    review_runs:
+      - >-
+        echo "::notice::claude-review skipped, no ANTHROPIC_API_KEY or
+        CLAUDE_CODE_OAUTH_TOKEN secret (README, Automated review)."
+      - git diff --no-color "$BASE_SHA...HEAD" > pr.diff
+    # Everything Claude may do without asking. With no Bash and no gh, a PR
+    # comment can't reach the model, and a comment body is its only output.
+    allowed_tools: [mcp__github_inline_comment__create_inline_comment, Read, Grep, Glob]
+    # The action puts the job token into the git remote URL, so .git is off
+    # limits; the runner keeps its own files under ~/work/_temp and
+    # ~/work/_actions. The checkout itself is under ~/work, so not all of ~.
+    # Read rules also cover Grep and Glob.
+    denied_tools: [Bash, Edit, Write, MultiEdit, NotebookEdit, WebFetch, WebSearch, Task]
+    denied_reads:
+      - Read(./.git/**)
+      - Read(//proc/**)
+      - Read(//tmp/**)
+      - Read(~/.claude/**)
+      - Read(~/work/_temp/**)
+      - Read(~/work/_actions/**)
+    # The whole argument string: the action also reads values after a flag's
+    # first one, merges repeated flags and drops lines starting with #, so
+    # parsing it here could be fooled. --setting-sources user keeps .claude/ and .mcp.json in the PR out.
+    claude_args: >-
+      --max-turns 40
+      --setting-sources user
+      --allowedTools "{{ allowed_tools | join(',') }}"
+      --disallowedTools "{{ denied_tools | join(',') }}"
+      --disallowedTools "{{ denied_reads | join(',') }}"
+    claude_inputs: [anthropic_api_key, claude_code_oauth_token, github_token, prompt, claude_args]
+    review_if: >-
+      !github.event.pull_request.draft
+      && github.event.pull_request.head.repo.full_name == github.repository
+  tasks:
+    - name: List workflows
+      ansible.builtin.find:
+        paths: "{{ workflow_dir }}"
+        patterns: ["*.yml", "*.yaml"]
+      register: workflows
+
+    - name: Every action is pinned to a full commit SHA
+      vars:
+        uses: >-
+          {{ query('ansible.builtin.file', *(workflows.files | map(attribute='path')))
+             | map('regex_findall', 'uses:[ ]*["\x27]?([^ "\x27\n]+)')
+             | flatten | reject('match', '[.]/') | list }}
+        unpinned: "{{ uses | reject('match', '[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$') | list }}"
+      ansible.builtin.assert:
+        that:
+          - uses | length > 0
+          - unpinned == []
+        fail_msg: "not pinned to a commit SHA: {{ unpinned }}"
+        quiet: true
+
+    # Both run with the base repository's secrets on events a fork can cause.
+    - name: No workflow runs on pull_request_target or workflow_run
+      vars:
+        found: >-
+          {{ query('ansible.builtin.file', *(workflows.files | map(attribute='path')))
+             | map('regex_findall', '(pull_request_target|workflow_run)') | flatten | unique }}
+      ansible.builtin.assert:
+        that: found == []
+        fail_msg: "found: {{ found }}"
+        quiet: true
+
+    - name: Only claude-review.yml uses secrets
+      vars:
+        others: "{{ workflows.files | map(attribute='path') | reject('search', '/claude-review[.]yml$') | list }}"
+        found: >-
+          {{ (query('ansible.builtin.file', *others) if others else [])
+             | map('regex_findall', '(?s)[$][{][{](.*?)[}][}]') | flatten
+             | map('regex_findall', '(?<![A-Za-z0-9_.])secrets[^A-Za-z0-9_ ]?[A-Za-z0-9_]*')
+             | flatten | unique }}
+      ansible.builtin.assert:
+        that: found == []
+        fail_msg: "secrets in {{ others | map('basename') | list }}: {{ found }}"
+        quiet: true
+
+    - name: The review runs only on pull_request when a PR is opened, reopened or marked ready
+      vars:
+        # Without types, pull_request also runs on every push to the branch.
+        types: "{{ (review_on.pull_request | default({}, true)).types | default(['synchronize']) }}"
+      ansible.builtin.assert:
+        that:
+          - review_on.keys() | list == ['pull_request']
+          - types | sort == ['opened', 'ready_for_review', 'reopened']
+        fail_msg: "triggers: {{ review_on | to_json }}"
+        quiet: true
+
+    - name: The workflow token can read the code and write to PRs, nothing else
+      ansible.builtin.assert:
+        that:
+          - "review.permissions == {'contents': 'read', 'pull-requests': 'write'}"
+          - review_jobs | selectattr('permissions', 'defined') | list == []
+        fail_msg: >-
+          top-level permissions {{ review.permissions | default(none) | to_json }},
+          job-level {{ review_jobs | map(attribute='permissions', default='') | list | to_json }}
+        quiet: true
+
+    - name: Draft and fork PRs are skipped
+      vars:
+        conditions: "{{ review_jobs | map(attribute='if', default='') | list }}"
+      ansible.builtin.assert:
+        that: conditions | unique == [review_if]
+        fail_msg: "conditions: {{ conditions | to_json }}"
+        quiet: true
+
+    # Anything else could run Claude another way (a run step, another action),
+    # send the key elsewhere (ANTHROPIC_BASE_URL) or print the transcript
+    # (ACTIONS_STEP_DEBUG).
+    - name: The job has only the expected steps, commands and environment
+      vars:
+        step_env: "{{ review_steps | map(attribute='env', default={}) | map('list') | flatten }}"
+        actions: "{{ review_steps | map(attribute='uses', default='') | select | unique | sort }}"
+        runs: "{{ review_steps | map(attribute='run', default='') | select | list }}"
+        job_env: "{{ review_jobs | map(attribute='env', default={}) | map('list') | flatten }}"
+      ansible.builtin.assert:
+        that:
+          - review.env is not defined
+          - job_env == ['HAS_CREDENTIAL']
+          - step_env == ['BASE_SHA']
+          - actions == [checkout_action, claude_action] | sort
+          - runs == review_runs
+        fail_msg: >-
+          actions {{ actions }}, runs {{ runs | to_json }}, job env {{ job_env }},
+          step env {{ step_env }}, workflow env {{ review.env | default(none) | to_json }}
+        quiet: true
+
+    - name: Secrets are used only as expected
+      vars:
+        # Every use of the secrets context in an expression, across lines,
+        # so toJSON(secrets) and secrets['X'] count too.
+        uses: >-
+          {{ review_text | regex_findall('(?s)[$][{][{](.*?)[}][}]')
+             | map('regex_findall', '(?<![A-Za-z0-9_.])secrets[^A-Za-z0-9_ ]?[A-Za-z0-9_]*')
+             | flatten | unique | sort }}
+      ansible.builtin.assert:
+        that: uses == ['secrets.ANTHROPIC_API_KEY', 'secrets.CLAUDE_CODE_OAUTH_TOKEN', 'secrets.GITHUB_TOKEN']
+        fail_msg: "secrets: {{ uses }}"
+        quiet: true
+
+    - name: Claude gets the expected inputs, tools and token
+      vars:
+        claude_steps: "{{ review_steps | selectattr('uses', 'defined') | selectattr('uses', 'equalto', claude_action) | list }}"
+        claude_with: "{{ (claude_steps | first | default({})).with | default({}) }}"
+      ansible.builtin.assert:
+        that:
+          - claude_steps | length == 1
+          - claude_with | list == claude_inputs
+          - claude_with.claude_args == claude_args
+          - claude_with.github_token is match('[$][{][{] secrets[.]GITHUB_TOKEN [}][}]$')
+        fail_msg: >-
+          inputs {{ claude_with | list }}, github_token {{ claude_with.github_token | default(none) }},
+          claude_args {{ claude_with.claude_args | default(none) | to_json }}
+        quiet: true
+
+    - name: Checkouts keep no credentials on disk
+      vars:
+        checkout_steps: "{{ review_steps | selectattr('uses', 'defined') | selectattr('uses', 'equalto', checkout_action) | list }}"
+      ansible.builtin.assert:
+        that:
+          - checkout_steps | length == 1
+          - checkout_steps | map(attribute='with.persist-credentials', default=true) | list == [false]
+        fail_msg: "checkouts: {{ checkout_steps | map(attribute='with', default={}) | list | to_json }}"
+        quiet: true
