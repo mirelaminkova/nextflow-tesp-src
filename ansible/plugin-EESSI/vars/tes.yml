@@ -32,5 +32,6 @@ nf_co_groups: >-
   {{ getent_group | default({}) | list | select('match', '^rsc_co_[0-9]+$') | sort | list }}
 nf_tesp_config_group: "{{ nf_co_groups | first if nf_co_groups | length == 1 else '' }}"
 nf_tesp_config_mode: "{{ '0640' if nf_tesp_config_group else '0644' }}"
-# The template only writes the keys with TES on.
+# The template only writes the keys with TES on. Validation allows both keys
+# or neither, so the access key stands for the pair.
 nf_tesp_config_has_s3_keys: "{{ nf_tes_enabled | bool and nf_s3_access_key_id | length > 0 }}"

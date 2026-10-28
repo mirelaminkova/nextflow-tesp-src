@@ -95,6 +95,12 @@
         state: directory
         mode: '0755'
 
+    - name: Show who will be able to read the Nextflow TESP config
+      ansible.builtin.debug:
+        msg: >-
+          {{ nf_tesp_config }}: mode {{ nf_tesp_config_mode }}, group
+          {{ nf_tesp_config_group or 'root (no single rsc_co_<CO id> group: every account can read it)' }}
+
     - name: Deploy the Nextflow TESP config
       # Holds the TES password and S3 key pair. Every CO member's
       # ~/.nextflow/config includes it, so it is 0640 root:rsc_co_<CO id>:

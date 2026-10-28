@@ -1,7 +1,7 @@
 ---
 # Renders the TESP config with the catalog item's own validation, variables,
 # CO group check and template, from the e2e job's environment (throwaway CI
-# values), as root with the playbook's owner, group and mode:
+# values), as root (through sudo) with the playbook's owner, group and mode:
 #
 #   ansible-playbook -i localhost, -c local tests/e2e/render-config.yml -e out=<path>
 - name: Render the catalog item's TESP config for the e2e job
