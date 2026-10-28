@@ -12,8 +12,11 @@
 # script (recognised by its first line; users were told to edit it) is moved
 # to config.pre-tesp first. Any other config is the user's own and is left
 # alone. Nextflow reads $NXF_HOME/config (default ~/.nextflow/config) and needs
-# that directory writable anyway: it downloads plugins there. Failures are
-# ignored: a login must never fail here, also not in shells with set -e.
+# that directory writable anyway: it downloads plugins there. Only the CO's
+# group can read the system config. An account outside it can't use a config
+# of its own that is only the include (seeded when the file was
+# world-readable): every nextflow run would fail, so it is removed. Failures
+# are ignored: a login must never fail here, also not in shells with set -e.
 : "${NEXTFLOW_TESP_CONFIG:=/etc/nextflow/tesp.config}"
 nxf_user_config="${NXF_HOME:-$HOME/.nextflow}/config"
 if [ -r "$NEXTFLOW_TESP_CONFIG" ]; then
@@ -23,6 +26,11 @@ if [ -r "$NEXTFLOW_TESP_CONFIG" ]; then
     if [ ! -e "$nxf_user_config" ]; then
         { mkdir -p "${nxf_user_config%/config}" &&
             printf "includeConfig '%s'\n" "$NEXTFLOW_TESP_CONFIG" > "$nxf_user_config"; } 2>/dev/null || :
+    fi
+elif [ -e "$NEXTFLOW_TESP_CONFIG" ]; then
+    if [ -O "$nxf_user_config" ] &&
+        [ "$(cat "$nxf_user_config" 2>/dev/null)" = "includeConfig '$NEXTFLOW_TESP_CONFIG'" ]; then
+        rm -f "$nxf_user_config" 2>/dev/null || :
     fi
 fi
 unset nxf_user_config

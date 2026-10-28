@@ -71,6 +71,21 @@
     fail_msg: src_s3_region may only contain letters, digits, _ and -.
     quiet: true
 
+# Without an endpoint the AWS SDK sends requests to s3.<region>.amazonaws.com,
+# so a region like Ceph's 'default' fails only at the first `nextflow run`.
+# AWS region names look like eu-west-1, us-gov-west-1 or eusc-de-east-1.
+- name: Check src_s3_endpoint_url against src_s3_region
+  when: nf_tes_enabled | bool
+  ansible.builtin.assert:
+    that: >-
+      nf_s3_endpoint_url != ''
+      or nf_s3_region is match('[a-z]{2,4}(-[a-z]+)+-[0-9]+\Z')
+    fail_msg: >-
+      src_s3_endpoint_url is required unless src_s3_region is an AWS region
+      such as eu-west-1: without it, S3 requests go to s3.<region>.amazonaws.com.
+      Use the same endpoint as TESP's src_s3_endpoint_url.
+    quiet: true
+
 - name: Check src_s3_addressing_style
   ansible.builtin.assert:
     that: nf_s3_addressing_style in ['path', 'virtual', 'auto']

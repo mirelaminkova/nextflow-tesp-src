@@ -4,11 +4,16 @@
 # Run from the repository root with the e2e job's environment. Usage: run-s3-check-negative.sh
 set -uo pipefail
 
+# Not /dev/null: rendering runs as root and sets the config's owner, group and mode on this path,
+# which it would do if the S3 check ever let a wrong key through.
+scratch=$(mktemp -d)
+trap 'sudo rm -rf "$scratch"' EXIT
+
 expect_failure() {
     local why=$1 expect=$2 out
     shift 2
     if out=$(ansible-playbook -i localhost, -c local tests/e2e/render-config.yml \
-            -e out=/dev/null "$@" 2>&1); then
+            -e out="$scratch/tesp.config" "$@" 2>&1); then
         echo "$out"
         echo "the S3 check accepted $why" >&2
         return 1

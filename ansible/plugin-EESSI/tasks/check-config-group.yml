@@ -1,0 +1,13 @@
+---
+# Refuses to write the S3 key pair to a config that every account on the
+# workspace could read (issue #7): it needs the CO group (vars/tes.yml,
+# nf_tesp_config_group). Runs after the playbook's getent lookup of the groups.
+- name: Check that the S3 keys can be limited to the CO
+  ansible.builtin.assert:
+    that: nf_tesp_config_group | length > 0 or not nf_tesp_config_has_s3_keys | bool
+    fail_msg: >-
+      src_s3_access_key_id is set, but {{ nf_tesp_config }} could not be limited to the
+      workspace's CO: it needs exactly one group named rsc_co_<CO id>, found
+      {{ nf_co_groups | join(', ') | default('none', true) }}. Leave the S3 keys empty
+      and put them in each user's ~/.aws/credentials instead.
+    quiet: true
