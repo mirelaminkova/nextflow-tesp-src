@@ -14,7 +14,7 @@ The repository started as the `nf-tesp` branch of [mirelaminkova/Nextflow_EESSI]
 | Installs `lmod` and the EESSI CVMFS client, and checks that `cvmfs_talk` is installed | first play |
 | Adds a private Stratum 1 when `src_stratum1_host` is set | `files/template-eessi-hpc.org.local` |
 | Loads EESSI 2025.06 and `Nextflow/26.04.0` in interactive login shells | `files/eessi_nextflow.sh` |
-| Writes the TESP settings to `/etc/nextflow/tesp.config` | `templates/tesp.config.j2` |
+| Writes the TESP settings to `/etc/nextflow/tesp.config`, readable by the CO only | `templates/tesp.config.j2`, `tasks/check-config-group.yml` |
 
 At every login shell (an SSH or desktop login; `ssh host cmd`, `scp` and `sftp` don't read `/etc/profile.d`), the login script creates a missing `~/.nextflow/config` (or `$NXF_HOME/config`, as set before `/etc/profile.d` runs) containing only `includeConfig '/etc/nextflow/tesp.config'`. Re-running the playbook with a new endpoint or password therefore reaches every user. A full copy left by earlier versions of this component is moved to `config.pre-tesp` and replaced the same way; copy any settings you added to it back into `~/.nextflow/config`. Any other config is the user's own and is left alone: add the `includeConfig` line to it yourself. EESSI and Nextflow are only loaded in interactive shells, because EESSI prints a banner that would break `scp`, `sftp` and `rsync`.
 
@@ -52,9 +52,9 @@ What pipelines must do on TESP:
 
 Without `src_tes_endpoint`, `/etc/nextflow/tesp.config` holds only comments and Nextflow runs tasks locally.
 
-**Who can read the credentials:** `/etc/nextflow/tesp.config` is readable by every account on the workspace (0644), service accounts included, because every user's Nextflow config includes it. It holds:
-- the TES password: on SRC everyone who can log in is a member of the CO, the same people who can open the TESP welcome page that shows it;
-- the S3 key pair, if set: TESP never shows that key, so this file widens who can read it. Use a key that only grants access to the buckets meant for this work, and don't use this component on a workspace shared beyond the CO.
+**Who can read the credentials:** `/etc/nextflow/tesp.config` holds the TES password and, if set, the S3 key pair. Every CO member's Nextflow config includes it, so the playbook makes it `0640 root:rsc_co_<CO id>`. SRC puts every member of the workspace's CO in that group and keeps it in step with SRAM; service accounts such as `ubuntu` are not in it. These are the same people who can open the TESP welcome page that shows the TES password. TESP never shows the S3 key, so use one that only grants access to the buckets meant for this work. When someone leaves the CO, SRC disables their login but leaves them in the group.
+
+Without exactly one `rsc_co_<number>` group (not on SRC, or SRC has no CO id for the workspace), the file stays readable by every account (0644), and the playbook refuses S3 keys with an error before installing anything. Leave `src_s3_access_key_id` and `src_s3_secret_access_key` empty then, and have each user put their own key in `~/.aws/credentials` (mode 0600); Nextflow reads that file when the config sets no key.
 
 **Allowed values:** the playbook validates the parameters (strict URLs without quotes or credentials, a valid bucket name, both S3 keys or neither, no control characters) and escapes them for Groovy. A password or key may contain any printable character except the Ansible template markers `{{`, `{%` and `{#`; leading and trailing whitespace is removed, as in TESP: Ansible evaluates parameters as templates before this playbook sees them. TESP's generated passwords are base64, so they never contain them.
 
@@ -80,8 +80,8 @@ pre-commit run --all-files --hook-stage pre-push
 | --- | --- | --- |
 | Static | yamllint, ansible-lint (production profile), `ansible-playbook --syntax-check`, shellcheck | `.pre-commit-config.yaml`, `.yamllint`, `.ansible-lint` |
 | Static, on push | ast-grep rules (no `ignore_errors`; `no_log` on tasks that use password or secret variables) with their own tests; semgrep `p/github-actions` and `p/secrets` | `sgconfig.yml`, `.ast-grep/` |
-| Unit | Ansible playbooks in `tests/` that inspect the plugin, run its login script against a stand-in EESSI, check parameter validation, and render the TESP config with hostile values; no root, CVMFS or network: `tests/run.sh` | `tests/` |
-| End to end | CI only (needs Docker): tesp-api at the commit TESP-src pins, with Pulsar and MinIO, basic auth, and nginx at `/tes/`. The job renders this repo's config template, seeds it with the login script, and runs a two-process pipeline with Nextflow 26.04.0 on Java 25 against an `s3://` work dir. It checks the result and that both tasks reached COMPLETE on TES, then checks that a wrong password fails with 401 | `.github/workflows/e2e.yml`, `tests/e2e/` |
+| Unit | Ansible playbooks in `tests/` that inspect the plugin, run its login script against a stand-in EESSI, check parameter validation and the choice of the config's group, and render the TESP config with hostile values; no root, CVMFS or network: `tests/run.sh` | `tests/` |
+| End to end | CI only (needs Docker): tesp-api at the commit TESP-src pins, with Pulsar and MinIO, basic auth, and nginx at `/tes/`. The job renders this repo's config template as `/etc/nextflow/tesp.config` with the playbook's owner, group and mode for a stand-in CO group, checks that an account outside it can't read it, seeds it with the login script, and runs a two-process pipeline with Nextflow 26.04.0 on Java 25 against an `s3://` work dir. It checks the result and that both tasks reached COMPLETE on TES, then checks that a wrong password fails with 401 | `.github/workflows/e2e.yml`, `tests/e2e/` |
 
 CI (`.github/workflows/ci.yml`, `e2e.yml`) runs the same hooks, the unit tests and the end-to-end test, and needs no secrets. Hook and action versions are pinned to commit SHAs; the semgrep rule packs come from the semgrep registry at run time, so they can change without a commit here.
 

@@ -8,6 +8,13 @@
     - name: Validate the component parameters before installing anything
       ansible.builtin.include_tasks: tasks/validate-parameters.yml
 
+    - name: Look up the groups, to find the CO group for the TESP config
+      ansible.builtin.getent:
+        database: group
+
+    - name: Check who will be able to read the TESP config
+      ansible.builtin.include_tasks: tasks/check-config-group.yml
+
     - name: Install prerequisites
       ansible.builtin.apt:
         name:
@@ -89,17 +96,17 @@
         mode: '0755'
 
     - name: Deploy the Nextflow TESP config
-      # Holds the TES password and S3 key pair. World-readable because every
-      # user's ~/.nextflow/config includes it: everyone who can log in to this
-      # workspace is a member of the CO, the same people who can open the TESP
-      # welcome page that shows these credentials.
+      # Holds the TES password and S3 key pair. Every CO member's
+      # ~/.nextflow/config includes it, so it is 0640 root:rsc_co_<CO id>:
+      # members can read it, service accounts can't. Without a CO group it is
+      # 0644 and holds no S3 keys (vars/tes.yml, tasks/check-config-group.yml).
       no_log: true
       ansible.builtin.template:
         src: templates/tesp.config.j2
         dest: "{{ nf_tesp_config }}"
-        mode: '0644'
+        mode: "{{ nf_tesp_config_mode }}"
         owner: root
-        group: root
+        group: "{{ nf_tesp_config_group or 'root' }}"
 
     - name: Remove the config file written by earlier versions
       ansible.builtin.file:

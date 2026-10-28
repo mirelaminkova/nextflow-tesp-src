@@ -1,6 +1,7 @@
 ---
-# Renders the TESP config with the catalog item's own validation, variables
-# and template, from the e2e job's environment (throwaway CI values):
+# Renders the TESP config with the catalog item's own validation, variables,
+# CO group check and template, from the e2e job's environment (throwaway CI
+# values), as root with the playbook's owner, group and mode:
 #
 #   ansible-playbook -i localhost, -c local tests/e2e/render-config.yml -e out=<path>
 - name: Render the catalog item's TESP config for the e2e job
@@ -22,9 +23,20 @@
     - name: Validate the parameters
       ansible.builtin.include_tasks: "{{ plugin_dir }}/tasks/validate-parameters.yml"
 
+    - name: Look up the groups, to find the CO group
+      ansible.builtin.getent:
+        database: group
+
+    - name: Check who will be able to read the config
+      ansible.builtin.include_tasks: "{{ plugin_dir }}/tasks/check-config-group.yml"
+
+    # Owner, group and mode as in the playbook's "Deploy the Nextflow TESP config".
     - name: Render the config
       no_log: true
+      become: true
       ansible.builtin.template:
         src: "{{ plugin_dir }}/templates/tesp.config.j2"
         dest: "{{ out }}"
-        mode: '0644'
+        mode: "{{ nf_tesp_config_mode }}"
+        owner: root
+        group: "{{ nf_tesp_config_group or 'root' }}"

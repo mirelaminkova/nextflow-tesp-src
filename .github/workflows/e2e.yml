@@ -77,10 +77,21 @@ jobs:
 
       - name: render the catalog item's config and seed it like a login does
         run: |
-          mkdir -p "$RUNNER_TEMP/etc"
-          ansible-playbook -i localhost, -c local tests/e2e/render-config.yml -e out="$RUNNER_TEMP/etc/tesp.config"
+          # Issue #7: a stand-in for the group SRC keeps for the workspace's CO, rsc_co_<CO id>, with the
+          # runner in it. Steps that read the config run through as-co-member.sh to pick up the group.
+          sudo groupadd -g 4242 rsc_co_4242
+          sudo usermod -aG rsc_co_4242 "$USER"
+          sudo install -d -m 0755 /etc/nextflow
+          ansible-playbook -i localhost, -c local tests/e2e/render-config.yml -e out=/etc/nextflow/tesp.config
+          stat -c '%a %U %G' /etc/nextflow/tesp.config
+          test "$(stat -c '%a %U %G' /etc/nextflow/tesp.config)" = '640 root rsc_co_4242'
+          # An account outside the CO, such as a service account, can't read it.
+          if sudo -u nobody cat /etc/nextflow/tesp.config > /dev/null 2>&1; then
+            echo "an account outside the CO can read /etc/nextflow/tesp.config" >&2
+            exit 1
+          fi
           # Source the login script non-interactively: it seeds $NXF_HOME/config, then returns before EESSI.
-          NEXTFLOW_TESP_CONFIG="$RUNNER_TEMP/etc/tesp.config" bash -c '. "$1"' bash ansible/plugin-EESSI/files/eessi_nextflow.sh
+          tests/e2e/as-co-member.sh bash -c '. "$1"' bash ansible/plugin-EESSI/files/eessi_nextflow.sh
           cat "$NXF_HOME/config"
 
       - name: set up Java
@@ -148,7 +159,7 @@ jobs:
 
       - name: run pipeline
         working-directory: tests/e2e
-        run: nextflow -log "$RUNNER_TEMP/nf-logs/e2e.nextflow.log" run main.nf --outdir "$RUNNER_TEMP/results"
+        run: ./as-co-member.sh nextflow -log "$RUNNER_TEMP/nf-logs/e2e.nextflow.log" run main.nf --outdir "$RUNNER_TEMP/results"
 
       - name: check published result
         run: |
@@ -168,7 +179,7 @@ jobs:
 
       - name: negative check (wrong password)
         working-directory: tests/e2e
-        run: bash run-negative.sh "$RUNNER_TEMP/nf-logs"
+        run: ./as-co-member.sh bash run-negative.sh "$RUNNER_TEMP/nf-logs"
 
       - name: dump logs on failure
         if: failure()
