@@ -17,7 +17,7 @@
     review_jobs: "{{ review.jobs | dict2items | map(attribute='value') | list }}"
     review_steps: "{{ review_jobs | map(attribute='steps') | flatten }}"
     checkout_action: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-    claude_action: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc
+    claude_action: anthropics/claude-code-action@d70510b174a1244958df0b03166a54912811f3e6
     # The job's only commands: the skip notice and the diff Claude reads.
     review_runs:
       - >-
@@ -31,7 +31,7 @@
     # limits; the runner keeps its own files under ~/work/_temp and
     # ~/work/_actions. The checkout itself is under ~/work, so not all of ~.
     # Read rules also cover Grep and Glob.
-    denied_tools: [Bash, Edit, Write, MultiEdit, NotebookEdit, WebFetch, WebSearch, Task]
+    denied_tools: [Bash, Edit, Write, MultiEdit, NotebookEdit, WebFetch, WebSearch, Task, Agent]
     denied_reads:
       - Read(./.git/**)
       - Read(//proc/**)
