@@ -22,9 +22,8 @@
     # on failure, the error result (not the transcript).
     review_runs:
       - >-
-        echo "::notice::claude-review skipped, ANTHROPIC_FEDERATION_RULE_ID
-        or ANTHROPIC_ORGANIZATION_ID variable not set (README, Automated
-        review)."
+        echo "::notice::claude-review skipped, no CLAUDE_CODE_OAUTH_TOKEN
+        secret (README, Automated review)."
       - git diff --no-color "$BASE_SHA...HEAD" > pr.diff
       - >-
         jq -r '.[] | select(.type == "result" and .is_error)
@@ -54,8 +53,9 @@
       --allowedTools "{{ allowed_tools | join(',') }}"
       --disallowedTools "{{ denied_tools | join(',') }}"
       --disallowedTools "{{ denied_reads | join(',') }}"
-    # Federation only: an API key or OAuth token input would win over it.
-    claude_inputs: [anthropic_federation_rule_id, anthropic_organization_id, github_token, prompt, claude_args]
+    # The subscription token only: no API key or federation inputs that
+    # could be picked over it.
+    claude_inputs: [claude_code_oauth_token, github_token, prompt, claude_args]
     review_if: >-
       !github.event.pull_request.draft
       && github.event.pull_request.head.repo.full_name == github.repository
@@ -115,14 +115,13 @@
         fail_msg: "triggers: {{ review_on | to_json }}"
         quiet: true
 
-    # id-token only mints the OIDC token that the federation rule exchanges.
-    - name: The workflow token can read the code, write to PRs and mint an OIDC token, nothing else
+    - name: The workflow token can read the code and write to PRs, nothing else
       ansible.builtin.assert:
         that:
           - review.permissions == {}
           - >-
             review_jobs | map(attribute='permissions', default={}) | unique
-            == [{'contents': 'read', 'pull-requests': 'write', 'id-token': 'write'}]
+            == [{'contents': 'read', 'pull-requests': 'write'}]
         fail_msg: >-
           top-level permissions {{ review.permissions | default(none) | to_json }},
           job-level {{ review_jobs | map(attribute='permissions', default='') | list | to_json }}
@@ -166,7 +165,7 @@
              | map('regex_findall', '(?<![A-Za-z0-9_.])secrets[^A-Za-z0-9_ ]?[A-Za-z0-9_]*')
              | flatten | unique | sort }}
       ansible.builtin.assert:
-        that: uses == ['secrets.GITHUB_TOKEN']
+        that: uses == ['secrets.CLAUDE_CODE_OAUTH_TOKEN', 'secrets.GITHUB_TOKEN']
         fail_msg: "secrets: {{ uses }}"
         quiet: true
 
