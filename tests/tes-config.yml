@@ -126,7 +126,8 @@
           expect: src_s3_region
           params: {src_s3_region: "eu'"}
 
-    # getent_group as the getent module sets it: name -> [password, gid, members].
+    # ansible_facts.getent_group as the getent module sets it: name -> [password, gid,
+    # members]. Task vars stand in for the facts here.
     - name: The config's group is the workspace's CO group, when there is exactly one
       ansible.builtin.assert:
         that:
@@ -135,7 +136,7 @@
         fail_msg: "{{ item.why }}: got group '{{ nf_tesp_config_group }}', mode {{ nf_tesp_config_mode }}"
         quiet: true
       vars:
-        getent_group: "{{ item.groups }}"
+        ansible_facts: {getent_group: "{{ item.groups }}"}
       loop_control:
         label: "{{ item.why }}"
       loop:
@@ -171,19 +172,19 @@
     - name: S3 keys are fine when the config can be limited to the CO
       ansible.builtin.include_tasks: "{{ plugin_dir }}/tasks/check-config-group.yml"
       vars:
-        getent_group: {rsc_co_7: [x, '7', alice]}
+        ansible_facts: {getent_group: {rsc_co_7: [x, '7', alice]}}
 
     - name: Without S3 keys no CO group is needed
       ansible.builtin.include_tasks: "{{ plugin_dir }}/tasks/check-config-group.yml"
       vars:
-        getent_group: {}
+        ansible_facts: {getent_group: {}}
         src_s3_access_key_id: ""
         src_s3_secret_access_key: ""
 
     - name: With TES off the keys are not written, so no CO group is needed
       ansible.builtin.include_tasks: "{{ plugin_dir }}/tasks/check-config-group.yml"
       vars:
-        getent_group: {}
+        ansible_facts: {getent_group: {}}
         src_tes_endpoint: ""
 
     - name: S3 keys without a CO group are refused
@@ -191,7 +192,7 @@
         - name: Check the config's group
           ansible.builtin.include_tasks: "{{ plugin_dir }}/tasks/check-config-group.yml"
           vars:
-            getent_group: {rsc_co_1: [x, '1', alice], rsc_co_2: [x, '2', bob]}
+            ansible_facts: {getent_group: {rsc_co_1: [x, '1', alice], rsc_co_2: [x, '2', bob]}}
 
         - name: The check should have failed
           ansible.builtin.fail:
@@ -290,7 +291,7 @@
                  | selectattr('name', 'equalto', 'Deploy the Nextflow TESP config') | first | default({}) }}
             deploy_args: "{{ deploy['ansible.builtin.template'] | default({}) }}"
 
-        # Without the lookup getent_group is undefined: no CO group, so 0644.
+        # Without the lookup ansible_facts.getent_group is undefined: no CO group, so 0644.
         - name: The playbook looks up the groups and checks them before installing anything
           ansible.builtin.assert:
             that:
