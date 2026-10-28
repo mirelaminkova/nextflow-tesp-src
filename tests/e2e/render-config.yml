@@ -1,7 +1,8 @@
 ---
 # Renders the TESP config with the catalog item's own validation, variables,
-# CO group check and template, from the e2e job's environment (throwaway CI
-# values), as root (through sudo) with the playbook's owner, group and mode:
+# CO group check, S3 check and template, from the e2e job's environment
+# (throwaway CI values), as root (through sudo) with the playbook's owner,
+# group and mode:
 #
 #   ansible-playbook -i localhost, -c local tests/e2e/render-config.yml -e out=<path>
 - name: Render the catalog item's TESP config for the e2e job
@@ -29,6 +30,9 @@
 
     - name: Check who will be able to read the config
       ansible.builtin.include_tasks: "{{ plugin_dir }}/tasks/check-config-group.yml"
+
+    - name: Check the S3 key pair against the work directory
+      ansible.builtin.include_tasks: "{{ plugin_dir }}/tasks/check-s3-access.yml"
 
     # Owner, group and mode as in the playbook's "Deploy the Nextflow TESP config".
     - name: Render the config

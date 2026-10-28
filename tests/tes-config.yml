@@ -292,15 +292,19 @@
             deploy_args: "{{ deploy['ansible.builtin.template'] | default({}) }}"
 
         # Without the lookup ansible_facts.getent_group is undefined: no CO group, so 0644.
-        - name: The playbook looks up the groups and checks them before installing anything
+        # The group check runs before the S3 check, so a deployment that would put the S3 keys in a
+        # world-readable file fails without using them.
+        - name: The playbook looks up the groups and checks them, then the S3 keys, before installing anything
           ansible.builtin.assert:
             that:
               - >-
                 steps | map(attribute='key') | list == ['ansible.builtin.include_tasks', 'ansible.builtin.getent',
-                                                         'ansible.builtin.include_tasks', 'ansible.builtin.apt']
+                                                         'ansible.builtin.include_tasks', 'ansible.builtin.include_tasks',
+                                                         'ansible.builtin.apt']
               - steps[0].value == 'tasks/validate-parameters.yml'
               - steps[1].value.database | default('') == 'group'
               - steps[2].value == 'tasks/check-config-group.yml'
+              - steps[3].value == 'tasks/check-s3-access.yml'
             fail_msg: "{{ steps | to_json }}"
           vars:
             # Module and arguments of the first play's tasks that matter here, in

@@ -11,6 +11,7 @@ The repository started as the `nf-tesp` branch of [mirelaminkova/Nextflow_EESSI]
 | Step | Files |
 | --- | --- |
 | Checks the component parameters before installing anything | `tasks/validate-parameters.yml`, `vars/tes.yml` |
+| Checks that the S3 key pair can write to `src_nf_workdir`, also before installing anything | `tasks/check-s3-access.yml`, `files/check-s3-access.py` |
 | Installs `lmod` and the EESSI CVMFS client, and checks that `cvmfs_talk` is installed | first play |
 | Adds a private Stratum 1 when `src_stratum1_host` is set | `files/template-eessi-hpc.org.local` |
 | Loads EESSI 2025.06 and `Nextflow/26.04.0` in interactive login shells | `files/eessi_nextflow.sh` |
@@ -57,7 +58,15 @@ Without `src_tes_endpoint`, `/etc/nextflow/tesp.config` holds only comments and 
 - When someone leaves the CO, SRC disables their login but leaves them in the group, so processes they left running (lingering user services, crontabs) can still read the file, also after you rotate a key and re-run the playbook. Before rotating, run `gpasswd -d <user> rsc_co_<CO id>`, `loginctl disable-linger <user>` and `crontab -r -u <user>`, and stop their processes (`pkill -u <user>`).
 - An account outside the group whose `~/.nextflow/config` is only the `includeConfig` line (seeded when the file was world-readable) loses that file at its next login, so its local Nextflow runs keep working.
 
-Without exactly one `rsc_co_<number>` group (not on SRC, or SRC has no CO id for the workspace), the file stays readable by every account (0644), and the playbook refuses S3 keys with an error before installing anything. Leave `src_s3_access_key_id` and `src_s3_secret_access_key` empty then, and have each user put their own key in `~/.aws/credentials` (mode 0600); Nextflow reads that file when the config sets no key.
+Without exactly one `rsc_co_<number>` group (not on SRC, or SRC has no CO id for the workspace), the file stays readable by every account (0644), and the playbook refuses S3 keys with an error before installing anything. Leave `src_s3_access_key_id` and `src_s3_secret_access_key` empty then, and have each user put their own key in `~/.aws/credentials` (mode 0600); Nextflow reads that file when the config sets no key, and the S3 check below is skipped.
+
+**S3 check at deploy time:** with TES on and the S3 keys set, the playbook writes a small object under `src_nf_workdir` and deletes it again, before installing anything. A key pair that can't write there fails the deployment with the cause and the parameter to fix, never the key itself, for example:
+
+```text
+Can't write to src_nf_workdir s3://nextflow-tesp/test at https://objectstore.surf.nl (InvalidAccessKeyId): src_s3_access_key_id is not a key that https://objectstore.surf.nl knows. Check the CO secret it comes from: ...
+```
+
+`InvalidAccessKeyId` and `SignatureDoesNotMatch` mean the CO secret behind `src_s3_access_key_id` or `src_s3_secret_access_key` holds the wrong value: update it in the CO's secrets and recreate the workspace. `AccessDenied` means the key is valid but can't write to that bucket. An endpoint that can't be reached is retried for about a minute first. Without the keys the check is skipped: Nextflow then uses the AWS default credentials of whoever runs it.
 
 **Allowed values:** the playbook validates the parameters (strict URLs without quotes or credentials, a valid bucket name, both S3 keys or neither, no control characters) and escapes them for Groovy. A password or key may contain any printable character except the Ansible template markers `{{`, `{%` and `{#`; leading and trailing whitespace is removed, as in TESP: Ansible evaluates parameters as templates before this playbook sees them. TESP's generated passwords are base64, so they never contain them.
 
@@ -83,8 +92,8 @@ pre-commit run --all-files --hook-stage pre-push
 | --- | --- | --- |
 | Static | yamllint, ansible-lint (production profile), `ansible-playbook --syntax-check`, shellcheck | `.pre-commit-config.yaml`, `.yamllint`, `.ansible-lint` |
 | Static, on push | ast-grep rules (no `ignore_errors`; `no_log` on tasks that use password or secret variables) with their own tests; semgrep `p/github-actions` and `p/secrets` | `sgconfig.yml`, `.ast-grep/` |
-| Unit | Ansible playbooks in `tests/` that inspect the plugin, run its login script against a stand-in EESSI, check parameter validation and the choice of the config's group, and render the TESP config with hostile values; no root, CVMFS or network: `tests/run.sh` | `tests/` |
-| End to end | CI only (needs Docker): tesp-api at the commit TESP-src pins, with Pulsar and MinIO, basic auth, and nginx at `/tes/`. The job renders this repo's config template as `/etc/nextflow/tesp.config` with the playbook's owner, group and mode for a stand-in CO group, checks that an account outside it can't read it, seeds it with the login script, and runs a two-process pipeline with Nextflow 26.04.0 on Java 25 against an `s3://` work dir. It checks the result and that both tasks reached COMPLETE on TES, then checks that a wrong password fails with 401 | `.github/workflows/e2e.yml`, `tests/e2e/` |
+| Unit | Ansible playbooks in `tests/` that inspect the plugin, run its login script against a stand-in EESSI, check parameter validation and the choice of the config's group, and render the TESP config with hostile values; Python tests of the S3 check's request signing (AWS's published SigV4 examples) and error messages; no root, CVMFS or network: `tests/run.sh` | `tests/` |
+| End to end | CI only (needs Docker): tesp-api at the commit TESP-src pins, with Pulsar and MinIO, basic auth, and nginx at `/tes/`. The job renders this repo's config template as `/etc/nextflow/tesp.config` with the playbook's owner, group and mode for a stand-in CO group, running the deploy-time S3 check against MinIO, checks that an account outside the group can't read it and that the S3 check rejects an unknown access key and a wrong secret key, seeds the config with the login script, and runs a two-process pipeline with Nextflow 26.04.0 on Java 25 against an `s3://` work dir. It checks the result and that both tasks reached COMPLETE on TES, then checks that a wrong password fails with 401 | `.github/workflows/e2e.yml`, `tests/e2e/` |
 
 CI (`.github/workflows/ci.yml`, `e2e.yml`) runs the same hooks, the unit tests and the end-to-end test, and needs no secrets. Hook and action versions are pinned to commit SHAs; the semgrep rule packs come from the semgrep registry at run time, so they can change without a commit here.
 
