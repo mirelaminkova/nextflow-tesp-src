@@ -44,7 +44,7 @@ repos:
         language: python
         additional_dependencies: [ansible-core==2.21.5]
         pass_filenames: false
-        files: ^(ansible|tests)/
+        files: ^(ansible|tests|\.github/workflows)/
       # Static analysis on every push; a finding blocks the push.
       - id: ast-grep
         name: ast-grep scan (+ rule tests)
