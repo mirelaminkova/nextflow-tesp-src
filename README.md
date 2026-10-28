@@ -29,8 +29,8 @@ At every login shell (an SSH or desktop login; `ssh host cmd`, `scp` and `sftp` 
 | `src_tes_username` | `tes` | no | TES Basic auth user |
 | `src_tes_password` | empty | **yes** | TES Basic auth password; required with an endpoint |
 | `src_nf_workdir` | empty | no | Nextflow work directory, `s3://<bucket>/<prefix>` (a prefix is required); required with an endpoint |
-| `src_s3_endpoint_url` | empty (AWS S3) | no | Same S3 endpoint as TESP's `src_s3_endpoint_url` |
-| `src_s3_region` | `us-east-1` | no | Region to sign requests for |
+| `src_s3_endpoint_url` | empty (AWS S3) | no | Same S3 endpoint as TESP's `src_s3_endpoint_url`; required with TES unless `src_s3_region` is an AWS region (such as `eu-west-1`) |
+| `src_s3_region` | `us-east-1` | no | Region to sign requests for; `default` on most Ceph object stores (needs `src_s3_endpoint_url`) |
 | `src_s3_access_key_id` | empty | **yes** | S3 access key; set both keys or neither |
 | `src_s3_secret_access_key` | empty | **yes** | S3 secret key |
 | `src_s3_addressing_style` | `path` | no | `path`, `virtual` or `auto`, as on TESP |
@@ -56,7 +56,7 @@ Without `src_tes_endpoint`, `/etc/nextflow/tesp.config` holds only comments and 
 - the TES password: on SRC everyone who can log in is a member of the CO, the same people who can open the TESP welcome page that shows it;
 - the S3 key pair, if set: TESP never shows that key, so this file widens who can read it. Use a key that only grants access to the buckets meant for this work, and don't use this component on a workspace shared beyond the CO.
 
-**Allowed values:** the playbook validates the parameters (strict URLs without quotes or credentials, a valid bucket name, both S3 keys or neither, no control characters) and escapes them for Groovy. A password or key may contain any printable character except the Ansible template markers `{{`, `{%` and `{#`; leading and trailing whitespace is removed, as in TESP: Ansible evaluates parameters as templates before this playbook sees them. TESP's generated passwords are base64, so they never contain them.
+**Allowed values:** the playbook validates the parameters (strict URLs without quotes or credentials, a valid bucket name, both S3 keys or neither, an S3 endpoint for non-AWS regions, no control characters) and escapes them for Groovy. A password or key may contain any printable character except the Ansible template markers `{{`, `{%` and `{#`; leading and trailing whitespace is removed, as in TESP: Ansible evaluates parameters as templates before this playbook sees them. TESP's generated passwords are base64, so they never contain them.
 
 ## Checks
 
