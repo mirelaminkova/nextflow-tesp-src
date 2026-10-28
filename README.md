@@ -30,8 +30,8 @@ At every login shell (an SSH or desktop login; `ssh host cmd`, `scp` and `sftp` 
 | `src_tes_username` | `tes` | no | TES Basic auth user |
 | `src_tes_password` | empty | **yes** | TES Basic auth password; required with an endpoint |
 | `src_nf_workdir` | empty | no | Nextflow work directory, `s3://<bucket>/<prefix>` (a prefix is required); required with an endpoint |
-| `src_s3_endpoint_url` | empty (AWS S3) | no | Same S3 endpoint as TESP's `src_s3_endpoint_url` |
-| `src_s3_region` | `us-east-1` | no | Region to sign requests for |
+| `src_s3_endpoint_url` | empty (AWS S3) | no | Same S3 endpoint as TESP's `src_s3_endpoint_url`; required with TES unless `src_s3_region` is an AWS region (such as `eu-west-1`) |
+| `src_s3_region` | `us-east-1` | no | Region to sign requests for; `default` on most Ceph object stores (needs `src_s3_endpoint_url`) |
 | `src_s3_access_key_id` | empty | **yes** | S3 access key; set both keys or neither |
 | `src_s3_secret_access_key` | empty | **yes** | S3 secret key |
 | `src_s3_addressing_style` | `path` | no | `path`, `virtual` or `auto`, as on TESP |
@@ -63,9 +63,9 @@ Without `src_tes_endpoint`, `/etc/nextflow/tesp.config` holds only comments and 
 Can't write to src_nf_workdir s3://nextflow-tesp/test at https://objectstore.surf.nl (InvalidAccessKeyId): src_s3_access_key_id is not a key that https://objectstore.surf.nl knows. Check the CO secret it comes from: ...
 ```
 
-`InvalidAccessKeyId` and `SignatureDoesNotMatch` mean the CO secret behind `src_s3_access_key_id` or `src_s3_secret_access_key` holds the wrong value: update it in the CO's secrets and recreate the workspace. `AccessDenied` means the key is valid but can't write to that bucket. An endpoint that can't be reached is retried for about a minute first. Without the keys the check is skipped: Nextflow then uses the AWS default credentials of whoever runs it.
+`InvalidAccessKeyId` and `SignatureDoesNotMatch` mean the CO secret behind `src_s3_access_key_id` or `src_s3_secret_access_key` holds the wrong value: update it in the CO's secrets and recreate the workspace. `AccessDenied` means the key is valid but can't write to that bucket. An endpoint that can't be reached is retried for about a minute first. A region that isn't an AWS region, such as Ceph's `default`, without `src_s3_endpoint_url` fails the parameter check that runs before this one, so the S3 check never tries `s3.default.amazonaws.com`. Without the keys the check is skipped: Nextflow then uses the AWS default credentials of whoever runs it.
 
-**Allowed values:** the playbook validates the parameters (strict URLs without quotes or credentials, a valid bucket name, both S3 keys or neither, no control characters) and escapes them for Groovy. A password or key may contain any printable character except the Ansible template markers `{{`, `{%` and `{#`; leading and trailing whitespace is removed, as in TESP: Ansible evaluates parameters as templates before this playbook sees them. TESP's generated passwords are base64, so they never contain them.
+**Allowed values:** the playbook validates the parameters (strict URLs without quotes or credentials, a valid bucket name, both S3 keys or neither, an S3 endpoint for non-AWS regions, no control characters) and escapes them for Groovy. A password or key may contain any printable character except the Ansible template markers `{{`, `{%` and `{#`; leading and trailing whitespace is removed, as in TESP: Ansible evaluates parameters as templates before this playbook sees them. TESP's generated passwords are base64, so they never contain them.
 
 ## Checks
 
