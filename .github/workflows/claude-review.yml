@@ -5,18 +5,18 @@ name: claude-review
 # automated review" step of the contribution process. Posts inline threads;
 # every thread gets a fix or a reasoned reply, then is resolved.
 #
-# Needs one repository secret, added by a maintainer: ANTHROPIC_API_KEY, or
-# CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`). Without it the job skips
-# with a notice; on PRs from forks (which get no secrets) it doesn't run.
+# Authenticates by workload identity federation: the job's GitHub OIDC token
+# is exchanged for a short-lived Claude API token, so no API key is stored.
+# Needs two repository variables, added by a maintainer:
+# ANTHROPIC_FEDERATION_RULE_ID and ANTHROPIC_ORGANIZATION_ID. Without them
+# the job skips with a notice; on PRs from forks it doesn't run.
 # Limits: README, Automated review; tests/workflows.yml checks them.
 
 on:
   pull_request:
     types: [opened, reopened, ready_for_review]
 
-permissions:
-  contents: read
-  pull-requests: write
+permissions: {}
 
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
@@ -30,14 +30,22 @@ jobs:
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # id-token: the OIDC token the federation rule accepts.
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
     env:
-      HAS_CREDENTIAL: ${{ secrets.ANTHROPIC_API_KEY != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+      HAS_CREDENTIAL: >-
+        ${{ vars.ANTHROPIC_FEDERATION_RULE_ID != ''
+        && vars.ANTHROPIC_ORGANIZATION_ID != '' }}
     steps:
       - name: no credential, skip
         if: env.HAS_CREDENTIAL != 'true'
         run: >-
-          echo "::notice::claude-review skipped, no ANTHROPIC_API_KEY or
-          CLAUDE_CODE_OAUTH_TOKEN secret (README, Automated review)."
+          echo "::notice::claude-review skipped, ANTHROPIC_FEDERATION_RULE_ID
+          or ANTHROPIC_ORGANIZATION_ID variable not set (README, Automated
+          review)."
 
       - name: check out repository
         if: env.HAS_CREDENTIAL == 'true'
@@ -63,9 +71,11 @@ jobs:
         # "enabled", which the model rejects (400), so the review fails on its
         # first turn with no model usage.
         uses: anthropics/claude-code-action@d70510b174a1244958df0b03166a54912811f3e6  # v1.0.264
+        # No anthropic_api_key or claude_code_oauth_token: either one would
+        # take precedence over federation (workload-identity.ts).
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
