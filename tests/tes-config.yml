@@ -108,8 +108,8 @@
           expect: src_s3_endpoint_url
           params: {<<: *valid_tes, src_s3_endpoint_url: "https://k:s@objectstore.example.org"}
         - why: region with a quote
-          expect: src_s3_region
-          params: {<<: *valid_tes, src_s3_region: "eu'"}
+          expect: src_s3_region may only contain
+          params: {<<: *valid_tes, src_s3_endpoint_url: https://objectstore.example.org, src_s3_region: "eu'"}
         - why: unknown addressing style
           expect: src_s3_addressing_style
           params: {<<: *valid_tes, src_s3_addressing_style: dns}
@@ -123,8 +123,30 @@
           expect: src_s3_access_key_id
           params: {<<: *valid_tes, src_s3_access_key_id: k, src_s3_secret_access_key: "s\nt"}
         - why: S3 checks run with TES off too
-          expect: src_s3_region
+          expect: src_s3_region may only contain
           params: {src_s3_region: "eu'"}
+        - why: non-AWS region without an S3 endpoint
+          expect: required unless src_s3_region
+          params: {<<: *valid_tes, src_s3_region: default}
+        - why: region in upper case without an S3 endpoint
+          expect: required unless src_s3_region
+          params: {<<: *valid_tes, src_s3_region: EU-WEST-1}
+
+    - name: A non-AWS region passes with an S3 endpoint or with TES off, AWS regions pass without one
+      ansible.builtin.include_tasks: "{{ plugin_dir }}/tasks/validate-parameters.yml"
+      vars:
+        src_tes_endpoint: "{{ case.tes }}"
+        src_s3_endpoint_url: "{{ case.endpoint }}"
+        src_s3_region: "{{ case.region }}"
+      loop_control:
+        loop_var: case
+        label: "{{ case.region or '(default)' }} {{ case.endpoint or '(AWS)' }}{{ '' if case.tes else ' TES off' }}"
+      loop:
+        - {region: default, endpoint: https://objectstore.example.org, tes: https://tesp.example.org/tes}
+        - {region: default, endpoint: "", tes: ""}
+        - {region: "", endpoint: "", tes: https://tesp.example.org/tes}
+        - {region: us-gov-west-1, endpoint: "", tes: https://tesp.example.org/tes}
+        - {region: eusc-de-east-1, endpoint: "", tes: https://tesp.example.org/tes}
 
     # ansible_facts.getent_group as the getent module sets it: name -> [password, gid,
     # members]. Task vars stand in for the facts here.
