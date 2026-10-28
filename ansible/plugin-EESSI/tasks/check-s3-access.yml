@@ -1,0 +1,38 @@
+---
+# Writes and deletes a small object under src_nf_workdir with the S3 key pair,
+# so a wrong or revoked key (such as a stale CO secret) fails the deployment
+# here, with the cause, instead of the first `nextflow run` with "Cannot
+# create work-dir". Runs only with TES on and the keys set: without keys,
+# Nextflow uses the AWS default credentials of whoever runs it.
+#
+# The script prints no secrets, so its one-line reason is shown on failure;
+# the task that passes the keys stays no_log.
+- name: Check that the S3 key pair can write to src_nf_workdir
+  when: nf_tes_enabled | bool and nf_s3_access_key_id != ''
+  block:
+    - name: Write and delete a probe object under src_nf_workdir
+      ansible.builtin.script:
+        # Relative to this file: Ansible looks next to the included task file.
+        cmd: ../files/check-s3-access.py
+        executable: python3
+      environment:
+        NF_WORKDIR: "{{ nf_workdir }}"
+        NF_S3_ENDPOINT_URL: "{{ nf_s3_endpoint_url }}"
+        NF_S3_REGION: "{{ nf_s3_region }}"
+        NF_S3_ACCESS_KEY_ID: "{{ nf_s3_access_key_id }}"
+        NF_S3_SECRET_ACCESS_KEY: "{{ nf_s3_secret_access_key }}"
+        NF_S3_ADDRESSING_STYLE: "{{ nf_s3_addressing_style }}"
+      register: nf_s3_check
+      changed_when: false
+      failed_when: false
+      # Exit code 2: the endpoint could not be reached; retry for a while.
+      until: nf_s3_check.rc != 2
+      retries: 5
+      delay: 10
+      no_log: true
+
+    - name: Fail if the S3 key pair can't write to src_nf_workdir
+      ansible.builtin.assert:
+        that: nf_s3_check.rc == 0
+        fail_msg: "{{ nf_s3_check.stdout | default('') | trim | default('the S3 check failed without a reason', true) }}"
+        quiet: true
