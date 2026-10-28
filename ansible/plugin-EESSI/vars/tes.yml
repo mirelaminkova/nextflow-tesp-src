@@ -21,3 +21,17 @@ nf_ga4gh_version: "1.5.0"
 # Read by every user's Nextflow config through includeConfig. The login
 # script (files/eessi_nextflow.sh) has the same default path.
 nf_tesp_config: /etc/nextflow/tesp.config
+
+# Who may read nf_tesp_config (issue #7). SRC puts every member of the
+# workspace's CO in one POSIX group, rsc_co_<CO id> (GID = CO id), and keeps
+# it in step with SRAM; service accounts are not in it. The playbook's getent
+# lookup sets ansible_facts.getent_group. Without exactly one such group (not
+# on SRC, or SRC has no CO id), the config stays readable by every account,
+# and tasks/check-config-group.yml refuses S3 keys.
+nf_co_groups: >-
+  {{ ansible_facts.getent_group | default({}) | list | select('match', '^rsc_co_[0-9]+$') | sort | list }}
+nf_tesp_config_group: "{{ nf_co_groups | first if nf_co_groups | length == 1 else '' }}"
+nf_tesp_config_mode: "{{ '0640' if nf_tesp_config_group else '0644' }}"
+# The template only writes the keys with TES on. Validation allows both keys
+# or neither, so the access key stands for the pair.
+nf_tesp_config_has_s3_keys: "{{ nf_tes_enabled | bool and nf_s3_access_key_id | length > 0 }}"
