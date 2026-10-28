@@ -1,5 +1,5 @@
 ---
-# Renders the TESP config with the catalog item's own validation, variables
+# Renders the TESP config with the catalog item's own validation, S3 check, variables
 # and template, from the e2e job's environment (throwaway CI values):
 #
 #   ansible-playbook -i localhost, -c local tests/e2e/render-config.yml -e out=<path>
@@ -21,6 +21,9 @@
   tasks:
     - name: Validate the parameters
       ansible.builtin.include_tasks: "{{ plugin_dir }}/tasks/validate-parameters.yml"
+
+    - name: Check the S3 key pair against the work directory
+      ansible.builtin.include_tasks: "{{ plugin_dir }}/tasks/check-s3-access.yml"
 
     - name: Render the config
       no_log: true

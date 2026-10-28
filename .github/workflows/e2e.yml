@@ -75,14 +75,6 @@ jobs:
         # Same version as in ci.yml and .pre-commit-config.yaml.
         run: pip install "ansible-core==2.21.5"
 
-      - name: render the catalog item's config and seed it like a login does
-        run: |
-          mkdir -p "$RUNNER_TEMP/etc"
-          ansible-playbook -i localhost, -c local tests/e2e/render-config.yml -e out="$RUNNER_TEMP/etc/tesp.config"
-          # Source the login script non-interactively: it seeds $NXF_HOME/config, then returns before EESSI.
-          NEXTFLOW_TESP_CONFIG="$RUNNER_TEMP/etc/tesp.config" bash -c '. "$1"' bash ansible/plugin-EESSI/files/eessi_nextflow.sh
-          cat "$NXF_HOME/config"
-
       - name: set up Java
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad  # v6.1.0
         with:
@@ -134,7 +126,9 @@ jobs:
       - name: wait for minio
         run: |
           for _ in $(seq 1 60); do
-            if curl -fsS -o /dev/null http://172.17.0.1:9000/minio/health/ready; then
+            # Bitnami creates MINIO_DEFAULT_BUCKETS during startup; an anonymous HEAD answers 404 until then.
+            if curl -fsS -o /dev/null http://172.17.0.1:9000/minio/health/ready &&
+                [ "$(curl -s -o /dev/null -w '%{http_code}' -I http://172.17.0.1:9000/tesp-test)" != 404 ]; then
               echo "minio is up"
               exit 0
             fi
@@ -142,6 +136,18 @@ jobs:
           done
           echo "minio did not answer on 172.17.0.1:9000 within 5 minutes" >&2
           exit 1
+
+      - name: render the catalog item's config and seed it like a login does
+        # After MinIO is up: rendering runs the deploy-time S3 check against it.
+        run: |
+          mkdir -p "$RUNNER_TEMP/etc"
+          ansible-playbook -i localhost, -c local tests/e2e/render-config.yml -e out="$RUNNER_TEMP/etc/tesp.config"
+          # Source the login script non-interactively: it seeds $NXF_HOME/config, then returns before EESSI.
+          NEXTFLOW_TESP_CONFIG="$RUNNER_TEMP/etc/tesp.config" bash -c '. "$1"' bash ansible/plugin-EESSI/files/eessi_nextflow.sh
+          cat "$NXF_HOME/config"
+
+      - name: negative check (S3 check rejects wrong keys)
+        run: bash tests/e2e/run-s3-check-negative.sh
 
       - name: check nginx proxy and basic auth
         run: bash tests/e2e/check-proxy-auth.sh "$TES_ENDPOINT" "$TES_USER" "$TES_PASSWORD"

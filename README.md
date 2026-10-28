@@ -11,6 +11,7 @@ The repository started as the `nf-tesp` branch of [mirelaminkova/Nextflow_EESSI]
 | Step | Files |
 | --- | --- |
 | Checks the component parameters before installing anything | `tasks/validate-parameters.yml`, `vars/tes.yml` |
+| Checks that the S3 key pair can write to `src_nf_workdir`, also before installing anything | `tasks/check-s3-access.yml`, `files/check-s3-access.py` |
 | Installs `lmod` and the EESSI CVMFS client, and checks that `cvmfs_talk` is installed | first play |
 | Adds a private Stratum 1 when `src_stratum1_host` is set | `files/template-eessi-hpc.org.local` |
 | Loads EESSI 2025.06 and `Nextflow/26.04.0` in interactive login shells | `files/eessi_nextflow.sh` |
@@ -56,6 +57,14 @@ Without `src_tes_endpoint`, `/etc/nextflow/tesp.config` holds only comments and 
 - the TES password: on SRC everyone who can log in is a member of the CO, the same people who can open the TESP welcome page that shows it;
 - the S3 key pair, if set: TESP never shows that key, so this file widens who can read it. Use a key that only grants access to the buckets meant for this work, and don't use this component on a workspace shared beyond the CO.
 
+**S3 check at deploy time:** with TES on and the S3 keys set, the playbook writes a small object under `src_nf_workdir` and deletes it again, before installing anything. A key pair that can't write there fails the deployment with the cause and the parameter to fix, never the key itself, for example:
+
+```text
+Can't write to src_nf_workdir s3://nextflow-tesp/test at https://objectstore.surf.nl (InvalidAccessKeyId): src_s3_access_key_id is not a key that https://objectstore.surf.nl knows. Check the CO secret it comes from: ...
+```
+
+`InvalidAccessKeyId` and `SignatureDoesNotMatch` mean the CO secret behind `src_s3_access_key_id` or `src_s3_secret_access_key` holds the wrong value: update it in the CO's secrets and recreate the workspace. `AccessDenied` means the key is valid but can't write to that bucket. An endpoint that can't be reached is retried for about a minute first. Without the keys the check is skipped: Nextflow then uses the AWS default credentials of whoever runs it.
+
 **Allowed values:** the playbook validates the parameters (strict URLs without quotes or credentials, a valid bucket name, both S3 keys or neither, no control characters) and escapes them for Groovy. A password or key may contain any printable character except the Ansible template markers `{{`, `{%` and `{#`; leading and trailing whitespace is removed, as in TESP: Ansible evaluates parameters as templates before this playbook sees them. TESP's generated passwords are base64, so they never contain them.
 
 ## Checks
@@ -80,8 +89,8 @@ pre-commit run --all-files --hook-stage pre-push
 | --- | --- | --- |
 | Static | yamllint, ansible-lint (production profile), `ansible-playbook --syntax-check`, shellcheck | `.pre-commit-config.yaml`, `.yamllint`, `.ansible-lint` |
 | Static, on push | ast-grep rules (no `ignore_errors`; `no_log` on tasks that use password or secret variables) with their own tests; semgrep `p/github-actions` and `p/secrets` | `sgconfig.yml`, `.ast-grep/` |
-| Unit | Ansible playbooks in `tests/` that inspect the plugin, run its login script against a stand-in EESSI, check parameter validation, render the TESP config with hostile values, and check that workflow actions are pinned and that the review workflow keeps its limits (`tests/workflows.yml`); no root, CVMFS or network: `tests/run.sh` | `tests/` |
-| End to end | CI only (needs Docker): tesp-api at the commit TESP-src pins, with Pulsar and MinIO, basic auth, and nginx at `/tes/`. The job renders this repo's config template, seeds it with the login script, and runs a two-process pipeline with Nextflow 26.04.0 on Java 25 against an `s3://` work dir. It checks the result and that both tasks reached COMPLETE on TES, then checks that a wrong password fails with 401 | `.github/workflows/e2e.yml`, `tests/e2e/` |
+| Unit | Ansible playbooks in `tests/` that inspect the plugin, run its login script against a stand-in EESSI, check parameter validation, render the TESP config with hostile values, and check that workflow actions are pinned and that the review workflow keeps its limits (`tests/workflows.yml`); Python tests of the S3 check's request signing (AWS's published SigV4 examples) and error messages; no root, CVMFS or network: `tests/run.sh` | `tests/` |
+| End to end | CI only (needs Docker): tesp-api at the commit TESP-src pins, with Pulsar and MinIO, basic auth, and nginx at `/tes/`. The job renders this repo's config template, running the deploy-time S3 check against MinIO, checks that the S3 check rejects an unknown access key and a wrong secret key, seeds the config with the login script, and runs a two-process pipeline with Nextflow 26.04.0 on Java 25 against an `s3://` work dir. It checks the result and that both tasks reached COMPLETE on TES, then checks that a wrong password fails with 401 | `.github/workflows/e2e.yml`, `tests/e2e/` |
 
 CI (`.github/workflows/ci.yml`, `e2e.yml`) runs the same hooks, the unit tests and the end-to-end test, and needs no secrets. Hook and action versions are pinned to commit SHAs; the semgrep rule packs come from the semgrep registry at run time, so they can change without a commit here.
 
