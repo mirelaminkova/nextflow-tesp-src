@@ -294,17 +294,20 @@
         - name: The playbook looks up the groups and checks them before installing anything
           ansible.builtin.assert:
             that:
-              - steps | map(attribute='key') | list == ['ansible.builtin.getent', 'ansible.builtin.include_tasks', 'ansible.builtin.apt']
-              - steps[0].value.database | default('') == 'group'
-              - steps[1].value == 'tasks/check-config-group.yml'
+              - >-
+                steps | map(attribute='key') | list == ['ansible.builtin.include_tasks', 'ansible.builtin.getent',
+                                                         'ansible.builtin.include_tasks', 'ansible.builtin.apt']
+              - steps[0].value == 'tasks/validate-parameters.yml'
+              - steps[1].value.database | default('') == 'group'
+              - steps[2].value == 'tasks/check-config-group.yml'
             fail_msg: "{{ steps | to_json }}"
           vars:
             # Module and arguments of the first play's tasks that matter here, in
-            # order, from the validation include on (FQCN: ansible-lint requires it).
+            # order (FQCN: ansible-lint requires it).
             steps: >-
-              {{ (plays[0].tasks | map('dict2items') | flatten
-                  | selectattr('key', 'in', ['ansible.builtin.getent', 'ansible.builtin.include_tasks', 'ansible.builtin.apt'])
-                  | list)[1:] }}
+              {{ plays[0].tasks | map('dict2items') | flatten
+                 | selectattr('key', 'in', ['ansible.builtin.getent', 'ansible.builtin.include_tasks', 'ansible.builtin.apt'])
+                 | list }}
       always:
         - name: Remove output directory
           ansible.builtin.file:
@@ -422,6 +425,7 @@
 
         # Issue #7: an account outside the CO group, seeded when the config
         # was 0644, would otherwise fail every nextflow run on the include.
+        # Mode 0000 stands in for that; it needs a non-root run, as all of tests/.
         - name: Make the system config unreadable, as for an account outside the CO
           ansible.builtin.file:
             path: "{{ scratch.path }}/tesp.config"
